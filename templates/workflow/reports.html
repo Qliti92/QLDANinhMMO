@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}Báo cáo{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Báo cáo</h1>
+<form method="get" class="filter-bar mb-3">
+  <input class="form-control" type="date" name="date_from" value="{{ request.GET.date_from }}">
+  <input class="form-control" type="date" name="date_to" value="{{ request.GET.date_to }}">
+  <button class="btn btn-outline-primary"><i class="bi bi-funnel"></i> Áp dụng</button>
+</form>
+<div class="metric-grid mb-4">
+  {% for label, value in counts.items %}
+    <div class="metric"><div class="metric-label">{{ label|count_label }}</div><div class="metric-value">{{ value }}</div></div>
+  {% endfor %}
+</div>
+<div class="report-grid">
+  <div class="chart-panel"><h2>Trạng thái công việc</h2><canvas id="bieu-do-trang-thai"></canvas></div>
+  <div class="chart-panel"><h2>Kết quả</h2><canvas id="bieu-do-ket-qua"></canvas></div>
+  <div class="chart-panel"><h2>Ưu tiên</h2><canvas id="bieu-do-uu-tien"></canvas></div>
+  <div class="chart-panel"><h2>Hạn xử lý</h2><canvas id="bieu-do-han"></canvas></div>
+  <div class="chart-panel chart-wide"><h2>Dự án theo nhân viên</h2><canvas id="bieu-do-nhan-vien"></canvas></div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ by_status|json_script:"du-lieu-trang-thai" }}
+{{ by_result|json_script:"du-lieu-ket-qua" }}
+{{ by_priority|json_script:"du-lieu-uu-tien" }}
+{{ deadline_summary|json_script:"du-lieu-han" }}
+{{ by_employee|json_script:"du-lieu-nhan-vien" }}
+<script>
+const duLieuTrangThai = JSON.parse(document.getElementById('du-lieu-trang-thai').textContent);
+const duLieuKetQua = JSON.parse(document.getElementById('du-lieu-ket-qua').textContent);
+const duLieuUuTien = JSON.parse(document.getElementById('du-lieu-uu-tien').textContent);
+const duLieuHan = JSON.parse(document.getElementById('du-lieu-han').textContent);
+const duLieuNhanVien = JSON.parse(document.getElementById('du-lieu-nhan-vien').textContent);
+const statusLabels = {NEW: 'Mới', ASSIGNED: 'Đã giao', WORKING: 'Đang làm', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy'};
+const statusColors = {NEW: '#0ea5e9', ASSIGNED: '#7c3aed', WORKING: '#f59e0b', DONE: '#16a34a', CANCELLED: '#ef4444'};
+const resultLabels = {PENDING: 'Chờ duyệt', PROFIT: 'Lãi', LOSS: 'Lỗ'};
+const resultColors = {PENDING: '#94a3b8', PROFIT: '#16a34a', LOSS: '#ef4444'};
+const priorityLabels = {LOW: 'Thấp', NORMAL: 'Bình thường', HIGH: 'Cao', URGENT: 'Khẩn cấp'};
+const priorityColors = {LOW: '#94a3b8', NORMAL: '#2563eb', HIGH: '#f59e0b', URGENT: '#ef4444'};
+new Chart(document.getElementById('bieu-do-trang-thai'), {type: 'bar', data: {labels: duLieuTrangThai.map(x => statusLabels[x.status] || x.status), datasets: [{label: 'Số dự án', data: duLieuTrangThai.map(x => x.total), backgroundColor: duLieuTrangThai.map(x => statusColors[x.status] || '#64748b')}]}}); 
+new Chart(document.getElementById('bieu-do-ket-qua'), {type: 'doughnut', data: {labels: duLieuKetQua.map(x => resultLabels[x.result] || x.result), datasets: [{data: duLieuKetQua.map(x => x.total), backgroundColor: duLieuKetQua.map(x => resultColors[x.result] || '#64748b')}]}}); 
+new Chart(document.getElementById('bieu-do-uu-tien'), {type: 'doughnut', data: {labels: duLieuUuTien.map(x => priorityLabels[x.priority] || x.priority), datasets: [{data: duLieuUuTien.map(x => x.total), backgroundColor: duLieuUuTien.map(x => priorityColors[x.priority] || '#64748b')}]}}); 
+new Chart(document.getElementById('bieu-do-han'), {type: 'bar', data: {labels: duLieuHan.map(x => x.label), datasets: [{label: 'Số dự án', data: duLieuHan.map(x => x.total), backgroundColor: ['#ef4444', '#f59e0b', '#94a3b8', '#16a34a']}]}}); 
+new Chart(document.getElementById('bieu-do-nhan-vien'), {type: 'bar', data: {labels: duLieuNhanVien.map(x => x.current_employee__username || 'Chưa giao'), datasets: [{label: 'Số dự án', data: duLieuNhanVien.map(x => x.total), backgroundColor: '#14a38b'}]}});
+</script>
+{% endblock %}

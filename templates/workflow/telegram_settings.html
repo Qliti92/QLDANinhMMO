@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Cài đặt Telegram{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-0">Cài đặt Telegram</h1>
+    <div class="text-muted">Liên kết Telegram để nhận thông báo giao việc, tiến độ và trạng thái.</div>
+  </div>
+  {% if telegram_settings.enabled %}
+    <span class="badge text-bg-success">Đang bật</span>
+  {% else %}
+    <span class="badge text-bg-secondary">Đang tắt</span>
+  {% endif %}
+</div>
+
+{% if request.user.can_manage_projects %}
+<section class="side-panel mb-3">
+  <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h2 class="h5 mb-1">Cấu hình bot cho hệ thống</h2>
+      <div class="text-muted">Admin/quản lý tạo bot bằng @BotFather rồi nhập token tại đây.</div>
+    </div>
+    {% if telegram_settings.last_sync_at %}
+      <small class="text-muted">Đồng bộ cuối: {{ telegram_settings.last_sync_at|date:"d/m/Y H:i" }}</small>
+    {% endif %}
+  </div>
+  <form method="post" action="{% url 'telegram_settings_update' %}">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_bot">
+    <div class="row g-3">
+      <div class="col-lg-2">
+        <div class="form-check pt-4">{{ settings_form.enabled }} {{ settings_form.enabled.label_tag }}</div>
+      </div>
+      <div class="col-lg-5">{{ settings_form.bot_token.label_tag }}{{ settings_form.bot_token }}<div class="form-text">{{ settings_form.bot_token.help_text }}</div></div>
+      <div class="col-lg-5">{{ settings_form.bot_username.label_tag }}{{ settings_form.bot_username }}<div class="form-text">{{ settings_form.bot_username.help_text }}</div></div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <button class="btn btn-primary"><i class="bi bi-check2"></i> Lưu cấu hình</button>
+      <button class="btn btn-outline-secondary" name="action" value="test_bot"><i class="bi bi-activity"></i> Kiểm tra bot</button>
+      <button class="btn btn-outline-primary" name="action" value="sync_updates"><i class="bi bi-arrow-repeat"></i> Đồng bộ liên kết</button>
+    </div>
+  </form>
+  {% if telegram_settings.last_error %}
+    <div class="alert alert-warning mt-3 mb-0">{{ telegram_settings.last_error }}</div>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <section class="side-panel h-100">
+      <h2 class="h5">Hướng dẫn cho nhân viên</h2>
+      <ol class="telegram-steps">
+        <li>Bấm <strong>Mở Telegram để liên kết</strong>. Nếu nút chưa có, báo admin cấu hình username bot trước.</li>
+        <li>Trong Telegram, bấm <strong>Start</strong>. Nếu Telegram không tự điền lệnh, sao chép lệnh trong ô <strong>Lệnh liên kết của bạn</strong> rồi gửi cho bot.</li>
+        <li>Quay lại trang này. Nếu <strong>Chat ID</strong> chưa xuất hiện, báo admin bấm <strong>Đồng bộ liên kết</strong>.</li>
+        <li>Khi đã có Chat ID, bật <strong>Nhận thông báo qua Telegram</strong> trong phần cài đặt cá nhân rồi bấm <strong>Lưu cá nhân</strong>.</li>
+        <li>Bấm <strong>Gửi thử cho tôi</strong> để kiểm tra tin nhắn trước khi dùng thật.</li>
+      </ol>
+      <div class="telegram-code">
+        <span>Lệnh liên kết của bạn</span>
+        <strong>/start {{ request.user.telegram_link_token }}</strong>
+      </div>
+      {% if bot_start_url %}
+        <a class="btn btn-primary mt-3" href="{{ bot_start_url }}" target="_blank" rel="noreferrer"><i class="bi bi-telegram"></i> Mở Telegram để liên kết</a>
+      {% else %}
+        <div class="alert alert-info mt-3 mb-0">Admin cần nhập username bot trước khi tạo được link mở Telegram tự động.</div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    <section class="side-panel h-100">
+      <h2 class="h5">Cài đặt cá nhân</h2>
+      <div class="detail-grid mb-3">
+        <div><strong>Chat ID</strong><span>{{ request.user.telegram_chat_id|default:"Chưa liên kết" }}</span></div>
+        <div><strong>Telegram</strong><span>{% if request.user.telegram_username %}@{{ request.user.telegram_username }}{% else %}-{% endif %}</span></div>
+      </div>
+      <form method="post" action="{% url 'telegram_settings_update' %}" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_profile">
+        <div class="form-check mb-3">{{ profile_form.telegram_enabled }} {{ profile_form.telegram_enabled.label_tag }}</div>
+        <div class="mb-3">{{ profile_form.telegram_chat_id.label_tag }}{{ profile_form.telegram_chat_id }}<div class="form-text">{{ profile_form.telegram_chat_id.help_text }}</div></div>
+        <button class="btn btn-primary"><i class="bi bi-check2"></i> Lưu cá nhân</button>
+      </form>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" action="{% url 'telegram_settings_update' %}">
+          {% csrf_token %}
+          <button class="btn btn-outline-primary" name="action" value="send_test"><i class="bi bi-send"></i> Gửi thử cho tôi</button>
+        </form>
+        <form method="post" action="{% url 'telegram_settings_update' %}" onsubmit="return confirm('Tạo lại mã liên kết sẽ cần liên kết Telegram lại. Tiếp tục?')">
+          {% csrf_token %}
+          <button class="btn btn-outline-danger" name="action" value="regenerate_token"><i class="bi bi-arrow-clockwise"></i> Tạo lại mã</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+
+{% if request.user.can_manage_projects %}
+<section class="side-panel mt-3">
+  <h2 class="h5">Tình trạng liên kết nhân viên</h2>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Tài khoản</th><th>Telegram</th><th>Chat ID</th><th>Nhận thông báo</th></tr></thead>
+      <tbody>
+      {% for user in linked_users %}
+        <tr>
+          <td>{{ user.username }}</td>
+          <td>{% if user.telegram_username %}@{{ user.telegram_username }}{% else %}-{% endif %}</td>
+          <td>{{ user.telegram_chat_id }}</td>
+          <td>{% if user.telegram_enabled %}<span class="badge text-bg-success">Bật</span>{% else %}<span class="badge text-bg-secondary">Tắt</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="text-muted">Chưa có tài khoản nào liên kết Telegram.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if unlinked_staff %}
+    <div class="text-muted mt-2">Chưa liên kết: {% for user in unlinked_staff %}{{ user.username }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

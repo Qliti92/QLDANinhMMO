@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}Dự án{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-0">Dự án</h1>
+    <div class="text-muted">Tìm kiếm, lọc, phân công và cập nhật kết quả hàng loạt.</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url 'project_export' %}?{{ request.GET.urlencode }}"><i class="bi bi-download"></i> Xuất Excel</a>
+    {% if request.user.can_manage_projects %}
+      <a class="btn btn-primary" href="{% url 'project_create' %}"><i class="bi bi-plus-lg"></i> Tạo dự án</a>
+    {% endif %}
+  </div>
+</div>
+<section class="control-panel mb-3">
+  <div class="control-panel-head">
+    <div>
+      <h2>Bộ lọc</h2>
+      <p>Lọc nhanh theo trạng thái dự án, trạng thái công việc, kết quả, ưu tiên và khoảng ngày.</p>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'project_list' %}"><i class="bi bi-x-circle"></i> Xóa lọc</a>
+  </div>
+  <form method="get" class="filter-grid filter-grid-two-rows">
+    <input class="form-control filter-search" name="q" placeholder="Tìm theo tên hoặc domain" value="{{ request.GET.q }}">
+    <select class="form-select" name="project_state">
+      <option value="">Tất cả trạng thái dự án</option>
+      {% for value, label in project_states %}<option value="{{ value }}" {% if request.GET.project_state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select class="form-select" name="status">
+      <option value="">Tất cả trạng thái công việc</option>
+      {% for value, label in statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select class="form-select" name="result">
+      <option value="">Tất cả kết quả</option>
+      {% for value, label in results %}<option value="{{ value }}" {% if request.GET.result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select class="form-select" name="priority">
+      <option value="">Tất cả ưu tiên</option>
+      {% for value, label in priorities %}<option value="{{ value }}" {% if request.GET.priority == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select class="form-select" name="deadline_status">
+      <option value="">Tất cả hạn xử lý</option>
+      <option value="none" {% if request.GET.deadline_status == "none" %}selected{% endif %}>Chưa có hạn</option>
+      <option value="due_soon" {% if request.GET.deadline_status == "due_soon" %}selected{% endif %}>Sắp tới hạn</option>
+      <option value="overdue" {% if request.GET.deadline_status == "overdue" %}selected{% endif %}>Quá hạn</option>
+    </select>
+    <input class="form-control" type="date" name="date_from" value="{{ request.GET.date_from }}" title="Từ ngày">
+    <input class="form-control" type="date" name="date_to" value="{{ request.GET.date_to }}" title="Đến ngày">
+    <button class="btn btn-primary filter-submit"><i class="bi bi-funnel"></i> Lọc</button>
+  </form>
+</section>
+<form method="post" action="{% url 'bulk_action' %}">
+  {% csrf_token %}
+  {% if request.user.can_manage_projects %}
+    <section class="control-panel bulk-panel mb-3">
+      <div class="control-panel-head">
+        <div>
+          <h2>Thao tác hàng loạt</h2>
+          <p>Chọn nhiều dự án trong bảng rồi áp dụng giao việc hoặc cập nhật trạng thái/kết quả.</p>
+        </div>
+        <button class="btn btn-primary"><i class="bi bi-check2-square"></i> Áp dụng</button>
+      </div>
+      <div class="bulk-grid">
+        <select class="form-select form-select-sm bulk-action-field" name="action">
+          <option value="assign">Giao nhân viên</option>
+          <option value="change_project_state">Đổi trạng thái dự án</option>
+          <option value="mark_profit">Đánh dấu lãi</option>
+          <option value="mark_loss">Đánh dấu lỗ</option>
+          <option value="change_status">Đổi trạng thái công việc</option>
+          <option value="delete">Xóa</option>
+        </select>
+        <select class="form-select form-select-sm bulk-employee-field" name="employee">
+          <option value="">Nhân viên</option>
+          {% for employee in employees %}<option value="{{ employee.pk }}">{{ employee.username }}</option>{% endfor %}
+        </select>
+        <input class="form-control form-control-sm bulk-deadline-field" type="datetime-local" name="deadline_at" title="Hạn xử lý">
+        <select class="form-select form-select-sm bulk-priority-field" name="priority">
+          <option value="">Độ ưu tiên</option>
+          {% for value, label in priorities %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm bulk-project-state-field" name="project_state">
+          <option value="">Trạng thái dự án</option>
+          {% for value, label in project_states %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm bulk-status-field" name="status">
+          <option value="">Trạng thái công việc</option>
+          {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <input class="form-control form-control-sm bulk-note" type="text" name="note" placeholder="Nội dung giao việc">
+        <label class="form-check bulk-notify">
+          <input class="form-check-input" type="checkbox" name="notify" checked>
+          <span class="form-check-label">Thông báo</span>
+        </label>
+      </div>
+    </section>
+  {% endif %}
+  <div class="table-responsive project-table-wrap">
+    <table class="table table-hover align-middle project-table {% if request.user.can_manage_projects %}project-table-admin{% else %}project-table-staff{% endif %}">
+      <thead>
+        <tr>
+          {% if request.user.can_manage_projects %}<th><input type="checkbox" onclick="document.querySelectorAll('.row-check').forEach(c => c.checked = this.checked)"></th>{% endif %}
+          <th>Tên dự án</th><th>Nhân viên</th><th>TT dự án</th><th>TT công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn</th><th>Tiến trình</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for project in projects %}
+        <tr>
+          {% if request.user.can_manage_projects %}<td><input class="row-check" type="checkbox" name="project_ids" value="{{ project.pk }}"></td>{% endif %}
+          <td class="project-name-cell"><a href="{{ project.get_absolute_url }}">{{ project.project_name }}</a></td>
+          <td class="project-user-cell">
+            {% if project.current_employee %}
+              <span class="project-user-chip">{{ project.current_employee }}</span>
+            {% else %}
+              <span class="project-user-empty">-</span>
+            {% endif %}
+          </td>
+          <td><span class="badge {{ project.project_state|project_state_badge }}">{{ project.project_state|project_state_label }}</span></td>
+          <td><span class="badge {{ project.status|status_badge }}">{{ project.status|status_label }}</span></td>
+          <td><span class="badge {{ project.result|result_badge }}">{{ project.result|result_label }}</span></td>
+          <td><span class="{{ project.priority|priority_badge }}">{{ project.priority|priority_label }}</span></td>
+          <td class="project-deadline-cell"><span class="{{ project|deadline_badge }}">{{ project|deadline_label }}</span><div class="small text-muted">{{ project.deadline_at|date:"d/m H:i"|default:"-" }}</div></td>
+          <td class="project-progress-cell">
+            {% with latest=project.latest_progress %}
+              <div class="progress progress-sm"><div class="progress-bar {{ latest.progress_percent|default:0|progress_bar_class }}" style="width: {{ latest.progress_percent|default:0 }}%"></div></div>
+              <small>{{ latest.progress_percent|default:0 }}%</small>
+            {% endwith %}
+          </td>
+          <td class="project-actions-cell">
+            {% if request.user.can_manage_projects %}
+              <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#assignModal" data-project-id="{{ project.pk }}"><i class="bi bi-person-plus"></i> Giao</button>
+            {% endif %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ project.get_absolute_url }}"><i class="bi bi-eye"></i> Xem</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="{% if request.user.can_manage_projects %}10{% else %}9{% endif %}" class="text-muted">Không có dự án phù hợp.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+{% if request.user.can_manage_projects %}
+<div class="modal fade" id="assignModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" action="{% url 'assign_projects' %}" class="modal-content">
+      {% csrf_token %}
+      <div class="modal-header"><h5 class="modal-title">Giao việc</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="project_ids" id="assign-project-ids">
+        <div class="mb-3">{{ assign_form.employee.label_tag }}{{ assign_form.employee }}</div>
+        <div class="mb-3">{{ assign_form.deadline_at.label_tag }}{{ assign_form.deadline_at }}</div>
+        <div class="mb-3">{{ assign_form.priority.label_tag }}{{ assign_form.priority }}</div>
+        <div class="mb-3">{{ assign_form.note.label_tag }}{{ assign_form.note }}</div>
+        <div class="form-check">{{ assign_form.notify }} {{ assign_form.notify.label_tag }}</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button><button class="btn btn-primary">Giao việc</button></div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('assignModal')?.addEventListener('show.bs.modal', event => {
+  document.getElementById('assign-project-ids').value = event.relatedTarget?.getAttribute('data-project-id') || '';
+});
+</script>
+{% endif %}
+{% include "workflow/partials/pagination.html" %}
+{% endblock %}

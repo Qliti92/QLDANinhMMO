@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Không tìm thấy trang{% endblock %}
+{% block content %}
+<section class="error-page">
+  <div class="error-panel">
+    <div class="error-code">404</div>
+    <div class="error-icon"><i class="bi bi-signpost-split"></i></div>
+    <h1>Không tìm thấy trang</h1>
+    <p>Đường dẫn này không tồn tại hoặc bạn không còn quyền truy cập nội dung này.</p>
+    <div class="error-actions">
+      {% if request.user.is_authenticated %}
+        <a class="btn btn-primary" href="{% url 'dashboard' %}"><i class="bi bi-speedometer2"></i> Về tổng quan</a>
+        <a class="btn btn-outline-secondary" href="{% url 'project_list' %}"><i class="bi bi-folder2-open"></i> Dự án</a>
+        <a class="btn btn-outline-secondary" href="{% url 'task_list' %}"><i class="bi bi-list-task"></i> Nhiệm vụ</a>
+      {% else %}
+        <a class="btn btn-primary" href="{% url 'login' %}"><i class="bi bi-box-arrow-in-right"></i> Đăng nhập</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

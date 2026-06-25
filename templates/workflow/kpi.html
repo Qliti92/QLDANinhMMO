@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}KPI{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">KPI nhân viên</h1>
+<table class="table table-hover align-middle">
+  <thead><tr><th>Hạng</th><th>Nhân viên</th><th>Đã giao</th><th>Hoàn thành</th><th>Lãi</th><th>Lỗ</th><th>Quá hạn</th><th>Tiến trình TB</th><th>Tỷ lệ thành công</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{% if forloop.counter <= 3 %}<span class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</span>{% else %}{{ forloop.counter }}{% endif %}</td>
+        <td>{{ row.user.username }}</td>
+        <td>{{ row.user.total_assigned }}</td>
+        <td>{{ row.user.completed }}</td>
+        <td>{{ row.user.profit }}</td>
+        <td>{{ row.user.loss }}</td>
+        <td>{{ row.user.overdue }}</td>
+        <td>{{ row.avg_progress }}%</td>
+        <td>{{ row.success_rate }}%</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="text-muted">Chưa có nhân viên.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

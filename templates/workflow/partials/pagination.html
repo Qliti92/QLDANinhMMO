@@ -1,0 +1,25 @@
+{% load workflow_extras %}
+{% if is_paginated %}
+  <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Phan trang">
+    <div class="text-muted small">
+      Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} - {{ page_obj.paginator.count }} dong
+    </div>
+    <ul class="pagination mb-0">
+      {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?{% querystring page=1 %}">Dau</a></li>
+        <li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.previous_page_number %}">Truoc</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Dau</span></li>
+        <li class="page-item disabled"><span class="page-link">Truoc</span></li>
+      {% endif %}
+      <li class="page-item active"><span class="page-link">{{ page_obj.number }}</span></li>
+      {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.next_page_number %}">Sau</a></li>
+        <li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.paginator.num_pages %}">Cuoi</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Sau</span></li>
+        <li class="page-item disabled"><span class="page-link">Cuoi</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+{% endif %}

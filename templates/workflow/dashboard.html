@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}Tổng quan{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-0">Tổng quan</h1>
+    <div class="text-muted">Theo dõi nhanh tình hình dự án và kết quả vận hành.</div>
+  </div>
+  <a class="btn btn-primary" href="{% url 'project_list' %}"><i class="bi bi-folder2-open"></i> Mở danh sách dự án</a>
+</div>
+<div class="analytics-hero mb-4">
+  <section class="analytics-main">
+    <div class="analytics-eyebrow">Bức tranh vận hành</div>
+    <div class="analytics-total">{{ counts.total }}</div>
+    <div class="analytics-caption">Tổng dự án đang được theo dõi trong hệ thống</div>
+    <div class="analytics-bars">
+      <div>
+        <span>Hoàn thành</span>
+        <strong>{{ counts.completed }}</strong>
+        <div class="progress progress-sm"><div class="progress-bar bg-success" style="width: {% widthratio counts.completed counts.total 100 %}%"></div></div>
+      </div>
+      <div>
+        <span>Đang làm</span>
+        <strong>{{ counts.working }}</strong>
+        <div class="progress progress-sm"><div class="progress-bar bg-warning" style="width: {% widthratio counts.working counts.total 100 %}%"></div></div>
+      </div>
+      <div>
+        <span>Lãi</span>
+        <strong>{{ counts.profit }}</strong>
+        <div class="progress progress-sm"><div class="progress-bar bg-success" style="width: {% widthratio counts.profit counts.total 100 %}%"></div></div>
+      </div>
+      <div>
+        <span>Lỗ</span>
+        <strong>{{ counts.loss }}</strong>
+        <div class="progress progress-sm"><div class="progress-bar bg-danger" style="width: {% widthratio counts.loss counts.total 100 %}%"></div></div>
+      </div>
+    </div>
+  </section>
+  <section class="analytics-health">
+    <div class="health-card danger"><span>Quá hạn</span><strong>{{ counts.overdue }}</strong></div>
+    <div class="health-card warning"><span>Sắp tới hạn</span><strong>{{ counts.due_soon }}</strong></div>
+    <div class="health-card purple"><span>Khẩn cấp</span><strong>{{ counts.urgent_priority }}</strong></div>
+    <div class="health-card blue"><span>Tiến trình TB</span><strong>{{ counts.avg_progress }}%</strong></div>
+  </section>
+</div>
+
+<div class="stat-strip mb-4">
+  {% for group_name, keys in stat_groups %}
+    <section class="stat-cluster">
+      <h2>{{ group_name }}</h2>
+      {% for key in keys %}
+        <div class="stat-line">
+          <span>{{ key|count_label }}</span>
+          <strong>{{ counts|get_item:key }}</strong>
+        </div>
+      {% endfor %}
+    </section>
+  {% endfor %}
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-4">
+    <div class="alert-panel alert-danger-soft">
+      <h2 class="h6">Dự án quá hạn</h2>
+      {% for project in overdue_projects %}
+        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>{{ project.current_employee|default:"-" }}</small></a>
+      {% empty %}<p class="text-muted mb-0">Không có dự án quá hạn.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="alert-panel alert-warning-soft">
+      <h2 class="h6">Sắp tới hạn</h2>
+      {% for project in due_soon_projects %}
+        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>{{ project.deadline_at|date:"d/m H:i" }}</small></a>
+      {% empty %}<p class="text-muted mb-0">Không có dự án sắp tới hạn.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="alert-panel alert-purple-soft">
+      <h2 class="h6">Khẩn cấp / vướng mắc</h2>
+      {% for project in urgent_projects %}
+        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>Khẩn cấp</small></a>
+      {% empty %}
+        {% for item in blocked_progress %}
+          <a href="{{ item.project.get_absolute_url }}">{{ item.project.project_name }} <small>{{ item.blocker_note|truncatechars:24 }}</small></a>
+        {% empty %}<p class="text-muted mb-0">Không có cảnh báo.</p>{% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <h2 class="h5">Bảng xếp hạng nhân viên</h2>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>Hạng</th><th>Nhân viên</th><th>Đã giao</th><th>Hoàn thành</th><th>Lãi</th><th>Lỗ</th><th>Tiến trình TB</th><th>Thành công</th></tr></thead>
+        <tbody>
+          {% for row in employee_ranking %}
+            <tr>
+              <td>{% if forloop.counter <= 3 %}<span class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</span>{% else %}{{ forloop.counter }}{% endif %}</td>
+              <td>{{ row.user.username }}</td>
+              <td>{{ row.user.total_assigned }}</td>
+              <td>{{ row.user.completed }}</td>
+              <td>{{ row.user.profit }}</td>
+              <td>{{ row.user.loss }}</td>
+              <td>{{ row.avg_progress }}%</td>
+              <td>{{ row.success_rate }}%</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8" class="text-muted">Chưa có dữ liệu xếp hạng.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <h2 class="h5">Tóm tắt kết quả</h2>
+    <div class="result-stack">
+      <div class="result-card profit"><span>Lãi</span><strong>{{ counts.profit }}</strong></div>
+      <div class="result-card loss"><span>Lỗ</span><strong>{{ counts.loss }}</strong></div>
+      <div class="result-card pending"><span>Chờ duyệt</span><strong>{{ counts.pending_result }}</strong></div>
+    </div>
+  </div>
+</div>
+<h2 class="h5">Dự án gần đây</h2>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Tên dự án</th><th>Trạng thái dự án</th><th>Trạng thái công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Nhân viên</th><th></th></tr></thead>
+    <tbody>
+      {% for project in recent_projects %}
+        <tr>
+          <td>{{ project.project_name }}</td>
+          <td><span class="badge {{ project.project_state|project_state_badge }}">{{ project.project_state|project_state_label }}</span></td>
+          <td><span class="badge {{ project.status|status_badge }}">{{ project.status|status_label }}</span></td>
+          <td><span class="badge {{ project.result|result_badge }}">{{ project.result|result_label }}</span></td>
+          <td><span class="{{ project.priority|priority_badge }}">{{ project.priority|priority_label }}</span></td>
+          <td><span class="{{ project|deadline_badge }}">{{ project|deadline_label }}</span></td>
+          <td>{{ project.current_employee|default:"-" }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ project.get_absolute_url }}"><i class="bi bi-eye"></i> Xem</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="text-muted">Chưa có dự án.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

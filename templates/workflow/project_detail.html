@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}{{ project.project_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{ project.project_name }}</h1>
+    <div class="text-muted">Domain: {{ project.project_link }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-primary" href="{% url 'project_update' project.pk %}"><i class="bi bi-pencil-square"></i> Sửa</a>
+    {% if request.user.can_manage_projects %}
+      <form method="post" action="{% url 'project_delete' project.pk %}" onsubmit="return confirm('Xóa dự án này?')">
+        {% csrf_token %}
+        <button class="btn btn-outline-danger"><i class="bi bi-trash"></i> Xóa</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+<div class="detail-grid mb-4">
+  <div><strong>Trạng thái dự án</strong><span class="badge {{ project.project_state|project_state_badge }}">{{ project.project_state|project_state_label }}</span></div>
+  <div><strong>Trạng thái công việc</strong><span class="badge {{ project.status|status_badge }}">{{ project.status|status_label }}</span></div>
+  <div><strong>Kết quả</strong><span class="badge {{ project.result|result_badge }}">{{ project.result|result_label }}</span></div>
+  <div><strong>Ưu tiên</strong><span class="{{ project.priority|priority_badge }}">{{ project.priority|priority_label }}</span></div>
+  <div><strong>Hạn xử lý</strong><span class="{{ project|deadline_badge }}">{{ project|deadline_label }}</span><span>{{ project.deadline_at|date:"d/m/Y H:i"|default:"-" }}</span></div>
+  <div><strong>Nhân viên</strong><span>{{ project.current_employee|default:"-" }}</span></div>
+  <div><strong>Ngày tạo</strong><span>{{ project.created_at|date:"Y-m-d H:i" }}</span></div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <h2 class="h5">Ghi chú</h2>
+    <p class="preline">{{ project.note|default:"-" }}</p>
+  </div>
+  <div class="col-lg-5">
+    <div class="side-panel">
+      <h2 class="h5">Thao tác nhanh</h2>
+      {% if request.user.can_manage_projects %}
+        <form method="post" action="{% url 'project_state_update' project.pk %}" class="compact-form mb-3">
+          {% csrf_token %}
+          {{ project_state_form.project_state }}
+          <button class="btn btn-sm btn-primary"><i class="bi bi-kanban"></i> TT dự án</button>
+        </form>
+      {% endif %}
+      <form method="post" action="{% url 'project_status_update' project.pk %}" class="compact-form mb-3">
+        {% csrf_token %}
+        {{ status_form.status }}
+        <button class="btn btn-sm btn-primary"><i class="bi bi-arrow-repeat"></i> TT công việc</button>
+      </form>
+      {% if request.user.can_manage_projects %}
+        <form method="post" action="{% url 'project_result_update' project.pk %}" class="compact-form mb-3">
+          {% csrf_token %}
+          {{ result_form.result }}
+          <button class="btn btn-sm btn-secondary"><i class="bi bi-flag"></i> Kết quả</button>
+        </form>
+        <form method="post" action="{% url 'assign_projects' %}" class="compact-form">
+          {% csrf_token %}
+          {{ assign_form.project_ids }}
+          {{ assign_form.employee }}
+          <button class="btn btn-sm btn-outline-primary"><i class="bi bi-person-plus"></i> Giao</button>
+        </form>
+      {% endif %}
+      {% if request.user.can_manage_projects or project.current_employee_id == request.user.pk %}
+        <button class="btn btn-sm btn-warning w-100 mt-3" data-bs-toggle="modal" data-bs-target="#progressModal"><i class="bi bi-graph-up"></i> Cập nhật tiến trình</button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% with latest=project.latest_progress %}
+<h2 class="h5 mt-4">Tiến trình mới nhất</h2>
+<div class="side-panel mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>{{ latest.progress_percent|default:0 }}%</strong>
+    <span class="text-muted">{{ latest.created_at|date:"d/m/Y H:i"|default:"Chưa cập nhật" }}</span>
+  </div>
+  <div class="progress"><div class="progress-bar {{ latest.progress_percent|default:0|progress_bar_class }}" style="width: {{ latest.progress_percent|default:0 }}%"></div></div>
+  {% if latest %}
+    <p class="mb-1 mt-3">{{ latest.status_note }}</p>
+    {% if latest.blocker_note %}<div class="alert alert-warning py-2 mb-0">Vướng mắc: {{ latest.blocker_note }}</div>{% endif %}
+  {% endif %}
+</div>
+{% endwith %}
+<h2 class="h5 mt-4">Lịch sử phân công</h2>
+<table class="table table-sm">
+  <thead><tr><th>Nhân viên</th><th>Người giao</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Nội dung</th><th>Thời gian</th></tr></thead>
+  <tbody>
+    {% for item in project.assignments.all %}
+      <tr><td>{{ item.employee }}</td><td>{{ item.assigned_by }}</td><td>{{ item.priority|priority_label }}</td><td>{{ item.deadline_at|date:"d/m H:i"|default:"-" }}</td><td>{{ item.note|default:"-" }}</td><td>{{ item.assigned_at|date:"Y-m-d H:i" }}</td></tr>
+    {% empty %}
+      <tr><td colspan="6" class="text-muted">Chưa có lịch sử phân công.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<h2 class="h5 mt-4">Lịch sử tiến trình</h2>
+<table class="table table-sm">
+  <thead><tr><th>Người cập nhật</th><th>%</th><th>Nội dung</th><th>Vướng mắc</th><th>Thời gian</th></tr></thead>
+  <tbody>
+    {% for item in project.progress_updates.all %}
+      <tr><td>{{ item.user }}</td><td>{{ item.progress_percent }}%</td><td>{{ item.status_note }}</td><td>{{ item.blocker_note|default:"-" }}</td><td>{{ item.created_at|date:"d/m/Y H:i" }}</td></tr>
+    {% empty %}
+      <tr><td colspan="5" class="text-muted">Chưa có cập nhật tiến trình.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="modal fade" id="progressModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" action="{% url 'project_progress_update' project.pk %}" class="modal-content">
+      {% csrf_token %}
+      <div class="modal-header"><h5 class="modal-title">Cập nhật tiến trình</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        {% for field in progress_form %}
+          <div class="mb-3">{{ field.label_tag }}{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</div>
+        {% endfor %}
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button><button class="btn btn-primary">Lưu tiến trình</button></div>
+    </form>
+  </div>
+</div>
+<h2 class="h5 mt-4">Nhật ký hoạt động</h2>
+<table class="table table-sm">
+  <thead><tr><th>Hành động</th><th>Người dùng</th><th>Mô tả</th><th>Thời gian</th></tr></thead>
+  <tbody>
+    {% for log in project.activity_logs.all %}
+      <tr><td>{{ log.action|action_label }}</td><td>{{ log.user|default:"-" }}</td><td>{{ log.description }}</td><td>{{ log.created_at|date:"Y-m-d H:i" }}</td></tr>
+    {% empty %}
+      <tr><td colspan="4" class="text-muted">Chưa có nhật ký.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

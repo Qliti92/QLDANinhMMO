@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Nhập Excel{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Nhập dự án từ Excel</h1>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <form method="post" enctype="multipart/form-data" class="form-panel">
+      {% csrf_token %}
+      {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+      <button class="btn btn-primary"><i class="bi bi-file-earmark-arrow-up"></i> Nhập dữ liệu</button>
+    </form>
+  </div>
+  <div class="col-lg-5">
+    <div class="side-panel">
+      <h2 class="h5">Dữ liệu cần nhập</h2>
+      <table class="table table-sm mb-0">
+        <tr><td>Excel</td><td>Chỉ cần 1 cột chứa link hoặc domain dự án.</td></tr>
+        <tr><td>Tiêu đề</td><td>Có hoặc không có đều được.</td></tr>
+        <tr><td>Domain</td><td>Hệ thống tự lấy domain, bỏ giao thức, đường dẫn và www.</td></tr>
+      </table>
+      <div class="alert alert-info mt-3 mb-0">
+        Hoặc dán link/domain thủ công ở ô bên trái, mỗi dòng một mục.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

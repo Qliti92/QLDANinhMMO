@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}Nhật ký hoạt động{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Nhật ký hoạt động</h1>
+<form method="get" class="filter-bar mb-3">
+  <select class="form-select" name="action">
+    <option value="">Tất cả hành động</option>
+    {% for value, label in actions %}<option value="{{ value }}" {% if request.GET.action == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline-primary"><i class="bi bi-funnel"></i> Lọc</button>
+</form>
+<table class="table table-hover">
+  <thead><tr><th>Hành động</th><th>Người dùng</th><th>Dự án</th><th>Mô tả</th><th>Thời gian</th></tr></thead>
+  <tbody>
+    {% for log in logs %}
+      <tr><td>{{ log.action|action_label }}</td><td>{{ log.user|default:"-" }}</td><td>{{ log.project|default:"-" }}</td><td>{{ log.description }}</td><td>{{ log.created_at|date:"Y-m-d H:i" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% include "workflow/partials/pagination.html" %}
+{% endblock %}

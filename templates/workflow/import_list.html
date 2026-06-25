@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử nhập{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Lịch sử nhập Excel</h1>
+  <a class="btn btn-primary" href="{% url 'import_excel' %}"><i class="bi bi-plus-lg"></i> Nhập mới</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Tệp</th><th>Người nhập</th><th>Tổng</th><th>Đã nhập</th><th>Trùng</th><th>Lỗi</th><th>Ngày tạo</th><th></th></tr></thead>
+    <tbody>
+      {% for batch in batches %}
+        <tr>
+          <td>{{ batch.original_filename }}</td>
+          <td>{{ batch.uploaded_by }}</td>
+          <td>{{ batch.total_rows }}</td>
+          <td>{{ batch.imported_rows }}</td>
+          <td>{{ batch.duplicate_rows }}</td>
+          <td>{{ batch.invalid_rows }}</td>
+          <td>{{ batch.created_at|date:"Y-m-d H:i" }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{% url 'import_detail' batch.pk %}"><i class="bi bi-eye"></i> Xem</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="text-muted">Chưa có lần nhập nào.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "workflow/partials/pagination.html" %}
+{% endblock %}

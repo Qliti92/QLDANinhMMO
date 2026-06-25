@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load workflow_extras %}
+{% block title %}Người dùng{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Người dùng</h1>
+  <a class="btn btn-primary" href="{% url 'user_create' %}"><i class="bi bi-person-plus"></i> Tạo người dùng</a>
+</div>
+<form method="get" class="filter-bar mb-3">
+  <input class="form-control" name="q" placeholder="Tìm tên đăng nhập" value="{{ request.GET.q }}">
+  <select class="form-select" name="role">
+    <option value="">Tất cả vai trò</option>
+    {% for value, label in roles %}<option value="{{ value }}" {% if request.GET.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline-primary"><i class="bi bi-funnel"></i> Lọc</button>
+</form>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Tên đăng nhập</th><th>Thư điện tử</th><th>Vai trò</th><th>Hoạt động</th><th>Quyền quản trị Django</th><th></th></tr></thead>
+    <tbody>
+      {% for user_obj in users %}
+        <tr>
+          <td>{{ user_obj.username }}</td>
+          <td>{{ user_obj.email|default:"-" }}</td>
+          <td>{{ user_obj.role|role_label }}</td>
+          <td>{{ user_obj.is_active|yesno:"Có,Không" }}</td>
+          <td>{{ user_obj.is_staff|yesno:"Có,Không" }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{% url 'user_update' user_obj.pk %}"><i class="bi bi-pencil"></i> Sửa</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-muted">Chưa có người dùng.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "workflow/partials/pagination.html" %}
+{% endblock %}
