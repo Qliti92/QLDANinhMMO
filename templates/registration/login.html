@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Đăng nhập{% endblock %}
 {% block content %}
 <div class="login-page">
   <section class="login-visual" aria-label="Minh họa quản lý quy trình">
     <div class="login-visual-overlay">
-      <div class="brand-pill"><i class="bi bi-kanban"></i> QLDS NINHMMO</div>
+      <div class="brand-pill"><img class="brand-pill-logo" src="{% static 'workflow/img/phulinh-logo.png' %}" alt=""> QLKH PHULINH</div>
       <h1>Điều phối dự án và theo dõi KPI</h1>
       <div class="login-stats">
         <span><strong>Excel</strong> Nhập dữ liệu</span>

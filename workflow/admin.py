@@ -89,5 +89,5 @@ class TaskProgressAdmin(admin.ModelAdmin):
 
 @admin.register(TelegramSettings)
 class TelegramSettingsAdmin(admin.ModelAdmin):
-    list_display = ("enabled", "bot_username", "last_sync_at", "updated_at")
+    list_display = ("enabled", "bot_username", "show_employee_ranking_to_staff", "last_sync_at", "updated_at")
     readonly_fields = ("last_update_id", "last_sync_at", "last_error", "updated_at")

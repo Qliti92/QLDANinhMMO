@@ -64,6 +64,20 @@ body {
   white-space: nowrap;
 }
 
+.brand-logo {
+  align-items: center;
+  background: #050505;
+  border: 1px solid rgba(253, 203, 110, .42);
+  border-radius: 9px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .18);
+  display: inline-flex;
+  flex: 0 0 38px;
+  height: 38px;
+  object-fit: contain;
+  padding: 4px;
+  width: 38px;
+}
+
 .brand i {
   align-items: center;
   background: linear-gradient(135deg, var(--sidebar-accent), #fdcb6e);
@@ -526,6 +540,16 @@ body {
   padding: 8px 14px;
 }
 
+.brand-pill-logo {
+  background: #050505;
+  border: 1px solid rgba(253, 203, 110, .45);
+  border-radius: 999px;
+  height: 26px;
+  object-fit: contain;
+  padding: 3px;
+  width: 26px;
+}
+
 .login-visual h1 {
   font-size: clamp(2.4rem, 5vw, 5.2rem);
   font-weight: 800;
@@ -829,51 +853,77 @@ body {
   min-width: 90px;
 }
 
-.project-table-wrap {
+.project-table-wrap,
+.task-table-wrap {
   overflow-x: auto;
 }
 
-.project-table {
+.project-table,
+.task-table {
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: .82rem;
-  min-width: 920px;
   table-layout: fixed;
 }
 
+.project-table {
+  min-width: 1040px;
+}
+
+.task-table {
+  min-width: 940px;
+}
+
 .project-table th,
-.project-table td {
-  padding: .48rem .42rem;
+.project-table td,
+.task-table th,
+.task-table td {
+  padding: .58rem .52rem;
   vertical-align: middle;
 }
 
-.project-table thead th {
+.project-table thead th,
+.task-table thead th {
   font-size: .72rem;
-  line-height: 1.15;
+  letter-spacing: .02em;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
-.project-table .status-badge {
+.project-table tbody tr:hover td,
+.task-table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.project-table .status-badge,
+.task-table .status-badge {
   font-size: .64rem;
   min-width: 68px;
   padding: .26rem .34rem;
 }
 
 .project-table .priority-badge,
-.project-table .deadline-badge {
+.project-table .deadline-badge,
+.task-table .priority-badge,
+.task-table .deadline-badge {
   font-size: .62rem;
   min-width: 0;
   padding: .24rem .28rem;
 }
 
-.project-table .priority-badge {
+.project-table .priority-badge,
+.task-table .priority-badge {
   width: 78px;
 }
 
-.project-table .deadline-badge {
+.project-table .deadline-badge,
+.task-table .deadline-badge {
   white-space: nowrap;
   width: 78px;
 }
 
-.project-table .btn-sm {
+.project-table .btn-sm,
+.task-table .btn-sm {
   border-radius: 5px;
   font-size: .72rem;
   line-height: 1.15;
@@ -886,12 +936,12 @@ body {
 
 .project-table-admin th:nth-child(2),
 .project-table-staff th:nth-child(1) {
-  width: 220px;
+  width: 250px;
 }
 
 .project-table-admin th:nth-child(3),
 .project-table-staff th:nth-child(2) {
-  width: 104px;
+  width: 116px;
 }
 
 .project-table-admin th:nth-child(4),
@@ -910,27 +960,63 @@ body {
 
 .project-table-admin th:nth-child(8),
 .project-table-staff th:nth-child(7) {
-  width: 124px;
+  width: 118px;
 }
 
 .project-table-admin th:nth-child(9),
 .project-table-staff th:nth-child(8) {
-  width: 66px;
+  width: 86px;
 }
 
 .project-table-admin th:nth-child(10),
 .project-table-staff th:nth-child(9) {
-  width: 116px;
+  width: 126px;
 }
 
-.project-name-cell a {
+.task-table th:nth-child(1) {
+  width: 290px;
+}
+
+.task-table-admin th:nth-child(2) {
+  width: 118px;
+}
+
+.task-table-staff th:nth-child(2) {
+  width: 112px;
+}
+
+.task-table th:nth-child(3),
+.task-table th:nth-child(4) {
+  width: 92px;
+}
+
+.task-table th:nth-child(5) {
+  width: 120px;
+}
+
+.task-table th:nth-child(6) {
+  width: 92px;
+}
+
+.task-table th:nth-child(7) {
+  width: 56px;
+}
+
+.task-table th:nth-child(8) {
+  width: 84px;
+}
+
+.project-name-cell a,
+.task-title-cell a {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-user-cell {
+.project-user-cell,
+.task-user-cell,
+.task-file-cell {
   text-align: center;
   white-space: nowrap;
 }
@@ -961,32 +1047,63 @@ body {
   min-width: 28px;
 }
 
-.project-name-cell a {
+.project-name-cell a,
+.task-title-cell a {
   color: #111827;
   font-weight: 700;
   text-decoration: none;
+}
+
+.task-title-cell .small {
+  display: block;
+  line-height: 1.25;
+  margin-top: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-link-cell a {
   max-width: 100%;
 }
 
-.project-deadline-cell .small {
+.project-deadline-cell .small,
+.task-deadline-cell .small {
   font-size: .68rem;
   line-height: 1.1;
   margin-top: 3px;
 }
 
-.project-progress-cell .progress-sm {
-  min-width: 44px;
+.project-progress-cell,
+.task-progress-cell {
+  text-align: center;
 }
 
-.project-actions-cell {
+.project-progress-cell .progress-sm,
+.task-progress-cell .progress-sm {
+  margin: 0 auto 3px;
+  min-width: 58px;
+  width: 64px;
+}
+
+.project-progress-cell small,
+.task-progress-cell small {
+  color: #475569;
+  display: block;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.project-actions-cell,
+.task-actions-cell {
   text-align: right;
   white-space: nowrap;
 }
 
-.project-actions-cell .btn + .btn {
+.project-actions-cell .btn + .btn,
+.task-actions-cell .btn + .btn {
   margin-left: 3px;
 }
 

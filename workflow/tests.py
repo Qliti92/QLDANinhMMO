@@ -1,10 +1,12 @@
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
+from .forms import ProgressUpdateForm, TaskForm
 from .models import ActivityLog, Assignment, Notification, Project, ProjectProgress, Task, TaskProgress, TelegramSettings
 from .repositories import ProjectRepository
 from .services import ImportService, NotificationService, ProgressService, ProjectService, TaskService, build_projects_workbook
@@ -61,6 +63,66 @@ class WorkflowServiceTests(TestCase):
         self.assertIn(self.manager.username, notice.title)
         self.assertIn(project.project_name, notice.message)
         self.assertIn("Khẩn cấp", notice.message)
+
+    def test_assign_sends_telegram_to_linked_staff(self):
+        TelegramSettings.objects.create(enabled=True, bot_token="token")
+        self.staff.telegram_enabled = True
+        self.staff.telegram_chat_id = "12345"
+        self.staff.save(update_fields=["telegram_enabled", "telegram_chat_id"])
+        project = Project.objects.create(
+            project_name="Telegram Project",
+            project_link="https://example.com/telegram-project",
+            created_by=self.manager,
+        )
+
+        with patch("workflow.services.TelegramService.send_message") as send_message:
+            ProjectService.assign([project], self.staff, self.manager, notify=True)
+
+        notice = Notification.objects.get(recipient=self.staff, notification_type=Notification.Type.PROJECT_ASSIGNED)
+        self.assertEqual(notice.telegram_status, "SENT")
+        send_message.assert_called_once()
+        self.assertEqual(send_message.call_args.args[0], "12345")
+        self.assertIn(project.project_name, send_message.call_args.args[1])
+
+    def test_task_create_sends_telegram_to_linked_staff(self):
+        TelegramSettings.objects.create(enabled=True, bot_token="token")
+        self.staff.telegram_enabled = True
+        self.staff.telegram_chat_id = "12345"
+        self.staff.save(update_fields=["telegram_enabled", "telegram_chat_id"])
+        form = TaskForm(
+            data={
+                "title": "Telegram Task",
+                "description": "Do this task",
+                "assignee": self.staff.pk,
+                "priority": Task.Priority.HIGH,
+                "status": Task.Status.NEW,
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+        with patch("workflow.services.TelegramService.send_message") as send_message:
+            task = TaskService.create_task(form, self.manager)
+
+        notice = Notification.objects.get(recipient=self.staff, notification_type=Notification.Type.TASK_ASSIGNED)
+        self.assertEqual(notice.telegram_status, "SENT")
+        send_message.assert_called_once()
+        self.assertEqual(send_message.call_args.args[0], "12345")
+        self.assertIn(task.title, send_message.call_args.args[1])
+
+    def test_project_progress_form_maps_stage_to_percent_and_note(self):
+        expected = {
+            "PENDING_REVIEW": (25, "Chờ Duyệt"),
+            "REGISTERED_SUCCESS": (50, "ĐK Thành Công"),
+            "CAMP_SET": (75, "Đã Set Camp"),
+            "SPENT": (100, "Đã Chi Tiêu"),
+        }
+        for stage, (percent, note) in expected.items():
+            with self.subTest(stage=stage):
+                form = ProgressUpdateForm(data={"progress_stage": stage, "blocker_note": ""})
+
+                self.assertTrue(form.is_valid(), form.errors)
+                self.assertEqual(form.cleaned_data["progress_percent"], percent)
+                self.assertEqual(form.cleaned_data["status_note"], note)
 
     def test_staff_progress_creates_update_and_manager_notification(self):
         project = Project.objects.create(
@@ -337,18 +399,53 @@ class WorkflowViewTests(TestCase):
 
         response = self.client.post(
             reverse("project_progress_update", args=[self.project.pk]),
-            {"progress_percent": 70, "status_note": "Gan xong", "blocker_note": ""},
+            {"progress_stage": "CAMP_SET", "blocker_note": ""},
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(ProjectProgress.objects.filter(project=self.project, progress_percent=70).exists())
+        self.assertTrue(ProjectProgress.objects.filter(project=self.project, progress_percent=75, status_note="Đã Set Camp").exists())
+
+    def test_staff_can_update_assigned_project_state_and_result(self):
+        self.project.current_employee = self.staff
+        self.project.save(update_fields=["current_employee"])
+        self.client.login(username="staff2", password="pass")
+
+        state_response = self.client.post(
+            reverse("project_state_update", args=[self.project.pk]),
+            {"project_state": Project.ProjectState.PAUSED},
+        )
+        result_response = self.client.post(
+            reverse("project_result_update", args=[self.project.pk]),
+            {"result": Project.Result.PROFIT},
+        )
+        self.project.refresh_from_db()
+
+        self.assertEqual(state_response.status_code, 302)
+        self.assertEqual(result_response.status_code, 302)
+        self.assertEqual(self.project.project_state, Project.ProjectState.PAUSED)
+        self.assertEqual(self.project.result, Project.Result.PROFIT)
+
+    def test_staff_cannot_update_unassigned_project_state_or_result(self):
+        self.client.login(username="staff2", password="pass")
+
+        state_response = self.client.post(
+            reverse("project_state_update", args=[self.project.pk]),
+            {"project_state": Project.ProjectState.PAUSED},
+        )
+        result_response = self.client.post(
+            reverse("project_result_update", args=[self.project.pk]),
+            {"result": Project.Result.PROFIT},
+        )
+
+        self.assertEqual(state_response.status_code, 404)
+        self.assertEqual(result_response.status_code, 404)
 
     def test_staff_cannot_submit_progress_for_unassigned_project(self):
         self.client.login(username="staff2", password="pass")
 
         response = self.client.post(
             reverse("project_progress_update", args=[self.project.pk]),
-            {"progress_percent": 70, "status_note": "Khong duoc"},
+            {"progress_stage": "CAMP_SET"},
         )
 
         self.assertEqual(response.status_code, 404)
@@ -369,6 +466,69 @@ class WorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(notice.is_read)
 
+    def test_staff_activity_logs_only_show_related_entries(self):
+        self.project.current_employee = self.staff
+        self.project.save(update_fields=["current_employee"])
+        hidden_project = Project.objects.create(
+            project_name="Hidden Log Project",
+            project_link="https://example.com/hidden-log",
+            created_by=self.manager,
+        )
+        own_log = ActivityLog.objects.create(
+            user=self.staff,
+            project=None,
+            action=ActivityLog.Action.PROGRESS_UPDATED,
+            description="Own activity",
+        )
+        assigned_project_log = ActivityLog.objects.create(
+            user=self.manager,
+            project=self.project,
+            action=ActivityLog.Action.PROJECT_ASSIGNED,
+            description="Assigned project activity",
+        )
+        hidden_log = ActivityLog.objects.create(
+            user=self.manager,
+            project=hidden_project,
+            action=ActivityLog.Action.PROJECT_UPDATED,
+            description="Hidden activity",
+        )
+        self.client.login(username="staff2", password="pass")
+
+        response = self.client.get(reverse("activity_logs"))
+
+        self.assertEqual(response.status_code, 200)
+        logs = list(response.context["logs"])
+        self.assertIn(own_log, logs)
+        self.assertIn(assigned_project_log, logs)
+        self.assertNotIn(hidden_log, logs)
+
+    def test_manager_activity_logs_show_all_entries(self):
+        visible_log = ActivityLog.objects.create(
+            user=self.staff,
+            project=self.project,
+            action=ActivityLog.Action.PROGRESS_UPDATED,
+            description="Staff activity",
+        )
+        hidden_project = Project.objects.create(
+            project_name="Manager Visible Project",
+            project_link="https://example.com/manager-visible",
+            created_by=self.manager,
+        )
+        other_log = ActivityLog.objects.create(
+            user=self.manager,
+            project=hidden_project,
+            action=ActivityLog.Action.PROJECT_UPDATED,
+            description="Manager activity",
+        )
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("activity_logs"))
+
+        self.assertEqual(response.status_code, 200)
+        logs = list(response.context["logs"])
+        self.assertIn(visible_log, logs)
+        self.assertIn(other_log, logs)
+
     def test_telegram_settings_page_renders_instructions(self):
         TelegramSettings.objects.create(bot_username="demo_bot")
         self.client.login(username="staff2", password="pass")
@@ -378,6 +538,22 @@ class WorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Hướng dẫn cho nhân viên")
         self.assertContains(response, "/start")
+
+    def test_manager_can_update_general_ranking_setting(self):
+        TelegramSettings.objects.create(show_employee_ranking_to_staff=True)
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.post(reverse("general_settings"), {"show_employee_ranking_to_staff": ""})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(TelegramSettings.get_solo().show_employee_ranking_to_staff)
+
+    def test_staff_cannot_open_general_settings(self):
+        self.client.login(username="staff2", password="pass")
+
+        response = self.client.get(reverse("general_settings"))
+
+        self.assertEqual(response.status_code, 403)
 
     def test_notification_records_skipped_telegram_when_not_linked(self):
         notice = NotificationService.create(
@@ -390,6 +566,30 @@ class WorkflowViewTests(TestCase):
 
         self.assertEqual(notice.telegram_status, "SKIPPED")
         self.assertIn("chưa bật", notice.telegram_error)
+
+    def test_telegram_notification_uses_custom_template(self):
+        TelegramSettings.objects.create(
+            enabled=True,
+            bot_token="token",
+            notification_template="Thông báo: {title}\nNgười gửi: {actor}\nDự án: {project}",
+        )
+        self.staff.telegram_enabled = True
+        self.staff.telegram_chat_id = "12345"
+        self.staff.save(update_fields=["telegram_enabled", "telegram_chat_id"])
+
+        with patch("workflow.services.TelegramService.send_message") as send_message:
+            NotificationService.create(
+                recipient=self.staff,
+                actor=self.manager,
+                project=self.project,
+                title="Cập nhật mới",
+                message="Nội dung mới",
+            )
+
+        sent_text = send_message.call_args.args[1]
+        self.assertIn("Thông báo: Cập nhật mới", sent_text)
+        self.assertIn("Người gửi: manager2", sent_text)
+        self.assertIn(f"Dự án: {self.project.project_name}", sent_text)
 
     def test_staff_dashboard_only_shows_visible_blockers(self):
         self.project.current_employee = self.staff
@@ -409,3 +609,23 @@ class WorkflowViewTests(TestCase):
         blockers = list(response.context["blocked_progress"])
         self.assertEqual(len(blockers), 1)
         self.assertEqual(blockers[0].project, self.project)
+
+    def test_staff_dashboard_hides_employee_ranking_when_disabled(self):
+        TelegramSettings.objects.create(show_employee_ranking_to_staff=False)
+        self.client.login(username="staff2", password="pass")
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["show_employee_ranking"])
+        self.assertNotContains(response, "Bảng xếp hạng nhân viên")
+
+    def test_manager_dashboard_still_shows_employee_ranking_when_staff_setting_disabled(self):
+        TelegramSettings.objects.create(show_employee_ranking_to_staff=False)
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["show_employee_ranking"])
+        self.assertContains(response, "Bảng xếp hạng nhân viên")

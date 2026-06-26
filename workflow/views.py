@@ -3,7 +3,7 @@ from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -14,6 +14,7 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Tem
 from .forms import (
     AssignmentForm,
     BulkActionForm,
+    GeneralSettingsForm,
     ImportExcelForm,
     ProjectForm,
     ProgressUpdateForm,
@@ -47,9 +48,11 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         qs = ProjectRepository.visible_to(self.request.user)
+        telegram_settings = TelegramSettings.get_solo()
         context["counts"] = ReportService.dashboard_counts(qs)
         context["recent_projects"] = qs[:10]
-        context["employee_ranking"] = ReportService.employee_kpis()[:8]
+        context["show_employee_ranking"] = self.request.user.can_manage_projects or telegram_settings.show_employee_ranking_to_staff
+        context["employee_ranking"] = ReportService.employee_kpis()[:8] if context["show_employee_ranking"] else []
         active = qs.exclude(status__in=[Project.Status.DONE, Project.Status.CANCELLED])
         now = timezone.now()
         context["stat_groups"] = [
@@ -141,18 +144,28 @@ class ProjectUpdateView(LoginRequiredMixin, UpdateView):
         return ProjectForm if self.request.user.can_manage_projects else StaffProjectUpdateForm
 
     def form_valid(self, form):
+        before_project_state = self.object.project_state
         before_status = self.object.status
         before_result = self.object.result
         response = super().form_valid(form)
+        after_project_state = self.object.project_state
         after_status = self.object.status
         after_result = self.object.result
+        if before_project_state != after_project_state:
+            log_activity(
+                self.request.user,
+                ActivityLog.Action.PROJECT_UPDATED,
+                f"ÄÃ£ Ä‘á»•i tráº¡ng thÃ¡i dá»± Ã¡n thÃ nh {self.object.get_project_state_display()}",
+                project=self.object,
+                request=self.request,
+            )
         if before_status != after_status:
             self.object.status = before_status
             ProjectService.update_status(self.object, after_status, self.request.user, request=self.request)
-        if self.request.user.can_manage_projects and before_result != after_result:
+        if before_result != after_result:
             self.object.result = before_result
             ProjectService.update_result(self.object, after_result, self.request.user, request=self.request)
-        if before_status == after_status and before_result == after_result:
+        if before_project_state == after_project_state and before_status == after_status and before_result == after_result:
             log_activity(
                 self.request.user,
                 ActivityLog.Action.PROJECT_UPDATED,
@@ -294,9 +307,9 @@ class ProjectStatusUpdateView(LoginRequiredMixin, View):
         return redirect(project.get_absolute_url())
 
 
-class ProjectStateUpdateView(ManagerRequiredMixin, View):
+class ProjectStateUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        project = get_object_or_404(Project.objects.active(), pk=pk)
+        project = get_object_or_404(ProjectRepository.visible_to(request.user), pk=pk)
         form = QuickProjectStateForm(request.POST)
         if not form.is_valid():
             messages.error(request, "Trạng thái dự án không hợp lệ.")
@@ -311,6 +324,14 @@ class ProjectStateUpdateView(ManagerRequiredMixin, View):
             request=request,
         )
         messages.success(request, "Đã cập nhật trạng thái dự án.")
+        if not request.user.can_manage_projects:
+            NotificationService.notify_managers(
+                actor=request.user,
+                project=project,
+                title=f"{request.user} cập nhật trạng thái dự án",
+                message=f"{request.user} đã cập nhật trạng thái dự án “{project.project_name}” thành {project.get_project_state_display()}.",
+                notification_type=Notification.Type.STATUS_UPDATED,
+            )
         return redirect(project.get_absolute_url())
 
 
@@ -450,9 +471,9 @@ class TaskProgressUpdateView(LoginRequiredMixin, View):
         return redirect(task.get_absolute_url())
 
 
-class ProjectResultUpdateView(ManagerRequiredMixin, View):
+class ProjectResultUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        project = get_object_or_404(Project.objects.active(), pk=pk)
+        project = get_object_or_404(ProjectRepository.visible_to(request.user), pk=pk)
         form = QuickResultForm(request.POST)
         if not form.is_valid():
             messages.error(request, "Kết quả không hợp lệ.")
@@ -539,7 +560,7 @@ class ReportView(ManagerRequiredMixin, TemplateView):
         return context
 
 
-class ActivityLogListView(ManagerRequiredMixin, ListView):
+class ActivityLogListView(LoginRequiredMixin, ListView):
     model = ActivityLog
     template_name = "workflow/activity_logs.html"
     context_object_name = "logs"
@@ -547,6 +568,16 @@ class ActivityLogListView(ManagerRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = ActivityLog.objects.select_related("user", "project")
+        if not self.request.user.can_manage_projects:
+            user = self.request.user
+            visible_task_ids = TaskRepository.visible_to(user).values_list("pk", flat=True)
+            qs = qs.filter(
+                Q(user=user)
+                | Q(project__current_employee=user)
+                | Q(metadata__employee_id=user.pk)
+                | Q(metadata__assignee_id=user.pk)
+                | Q(metadata__task_id__in=visible_task_ids)
+            )
         action = self.request.GET.get("action")
         if action:
             qs = qs.filter(action=action)
@@ -598,6 +629,26 @@ class NotificationReadAllView(LoginRequiredMixin, View):
         qs.update(is_read=True, read_at=timezone.now())
         messages.success(request, "Đã đánh dấu tất cả thông báo là đã đọc.")
         return redirect("notifications")
+
+
+class GeneralSettingsView(ManagerRequiredMixin, TemplateView):
+    template_name = "workflow/general_settings.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        settings_obj = TelegramSettings.get_solo()
+        context["settings_obj"] = settings_obj
+        context["form"] = kwargs.get("form") or GeneralSettingsForm(instance=settings_obj)
+        return context
+
+    def post(self, request):
+        form = GeneralSettingsForm(request.POST, instance=TelegramSettings.get_solo())
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Đã lưu cài đặt chung.")
+            return redirect("general_settings")
+        messages.error(request, "Không thể lưu cài đặt chung.")
+        return self.render_to_response(self.get_context_data(form=form))
 
 
 class TelegramSettingsView(LoginRequiredMixin, TemplateView):
@@ -681,7 +732,7 @@ class TelegramSettingsUpdateView(LoginRequiredMixin, View):
                 messages.error(request, "Tài khoản của bạn chưa có Telegram chat ID.")
             else:
                 try:
-                    TelegramService.send_message(request.user.telegram_chat_id, "Tin nhắn thử từ hệ thống QLDS NINHMMO.")
+                    TelegramService.send_message(request.user.telegram_chat_id, "Tin nhắn thử từ hệ thống QLKH PHULINH.")
                 except ValueError as exc:
                     messages.error(request, str(exc))
                 else:

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Cài đặt{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-0">Cài đặt chung</h1>
+    <div class="text-muted">Quản lý các tuỳ chọn hiển thị và vận hành hệ thống.</div>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <section class="side-panel">
+    <h2 class="h5 mb-3">Cài đặt bảng xếp hạng</h2>
+    <div class="form-check mb-3">
+      {{ form.show_employee_ranking_to_staff }}
+      <label class="form-check-label" for="{{ form.show_employee_ranking_to_staff.id_for_label }}">Hiển thị bảng xếp hạng cho nhân viên</label>
+    </div>
+  </section>
+
+  <section class="side-panel mt-3">
+    <h2 class="h5 mb-3">Cài đặt nội dung thông báo</h2>
+    <div class="mb-3">
+      {{ form.notification_template.label_tag }}
+      {{ form.notification_template }}
+      <div class="form-text">
+        Biến dùng được: {title}, {message}, {actor}, {recipient}, {project}, {task}, {type}, {object_line}.
+      </div>
+    </div>
+  </section>
+  <button class="btn btn-primary mt-3"><i class="bi bi-check2"></i> Lưu cài đặt</button>
+</form>
+{% endblock %}

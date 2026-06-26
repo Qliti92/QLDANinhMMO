@@ -159,7 +159,7 @@ class ProjectService:
             metadata={"before": before, "after": result},
             request=request,
         )
-        if project.current_employee:
+        if project.current_employee and project.current_employee_id != getattr(user, "pk", None):
             NotificationService.create(
                 recipient=project.current_employee,
                 actor=user,
@@ -170,6 +170,19 @@ class ProjectService:
                     f"{display_user(user)} đã cập nhật kết quả dự án “{project.project_name}” "
                     f"từ {dict(Project.Result.choices).get(before, before)} sang {dict(Project.Result.choices).get(result, result)}."
                 ),
+            )
+        if not user.can_manage_projects:
+            before_label = dict(Project.Result.choices).get(before, before)
+            after_label = dict(Project.Result.choices).get(result, result)
+            NotificationService.notify_managers(
+                actor=user,
+                project=project,
+                title=f"{display_user(user)} cập nhật kết quả dự án",
+                message=(
+                    f"{display_user(user)} đã cập nhật kết quả dự án “{project.project_name}” "
+                    f"từ {before_label} sang {after_label}."
+                ),
+                notification_type=Notification.Type.RESULT_UPDATED,
             )
 
     @staticmethod
@@ -199,6 +212,14 @@ class NotificationService:
                 f"{actor_name} đã giao dự án “{project.project_name}” cho bạn. "
                 f"Hạn xử lý: {display_datetime(project.deadline_at)}. "
                 f"Độ ưu tiên: {display_choice(project, 'priority')}."
+            )
+        elif notification_type == Notification.Type.TASK_ASSIGNED and task:
+            actor_name = display_user(actor)
+            title = f"{actor_name} giao nhiệm vụ cho bạn"
+            message = (
+                f"{actor_name} đã giao nhiệm vụ “{task.title}” cho bạn. "
+                f"Hạn hoàn thành: {display_datetime(task.deadline_at)}. "
+                f"Độ ưu tiên: {display_choice(task, 'priority')}."
             )
         notification = Notification.objects.create(
             recipient=recipient,
@@ -300,6 +321,27 @@ class TelegramService:
 
     @classmethod
     def format_notification(cls, notification) -> str:
+        object_line = ""
+        if notification.task:
+            object_line = f"\n\nNhiệm vụ: {notification.task.title}"
+        elif notification.project:
+            object_line = f"\n\nDự án: {notification.project.project_name}"
+        values = {
+            "title": notification.title,
+            "message": notification.message,
+            "actor": display_user(notification.actor),
+            "recipient": display_user(notification.recipient),
+            "project": notification.project.project_name if notification.project else "",
+            "task": notification.task.title if notification.task else "",
+            "type": notification.notification_type,
+            "object_line": object_line,
+        }
+        settings = TelegramSettings.get_solo()
+        template = settings.notification_template or TelegramSettings.DEFAULT_NOTIFICATION_TEMPLATE
+        try:
+            return template.format(**values).strip()
+        except (KeyError, ValueError):
+            return TelegramSettings.DEFAULT_NOTIFICATION_TEMPLATE.format(**values).strip()
         lines = [
             f"🔔 {notification.title}",
             "",
@@ -421,6 +463,7 @@ class TaskService:
     @staticmethod
     @transaction.atomic
     def update_task(task, form, user, files=None, request=None):
+        previous_assignee_id = task.assignee_id
         task = form.save()
         uploaded_count = len(files or [])
         for uploaded in files or []:
@@ -437,7 +480,16 @@ class TaskService:
             metadata={"task_id": task.pk},
             request=request,
         )
-        if task.assignee_id != getattr(user, "pk", None):
+        if previous_assignee_id != task.assignee_id:
+            NotificationService.create(
+                recipient=task.assignee,
+                actor=user,
+                task=task,
+                notification_type=Notification.Type.TASK_ASSIGNED,
+                title="",
+                message="",
+            )
+        elif task.assignee_id != getattr(user, "pk", None):
             NotificationService.create(
                 recipient=task.assignee,
                 actor=user,

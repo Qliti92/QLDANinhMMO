@@ -34,7 +34,7 @@ STATUS_LABELS = {
 }
 
 RESULT_LABELS = {
-    "PENDING": "Chờ duyệt",
+    "PENDING": "Đang làm",
     "PROFIT": "Lãi",
     "LOSS": "Lỗ",
 }
@@ -79,7 +79,7 @@ COUNT_LABELS = {
     "cancelled": "Đã hủy",
     "profit": "Lãi",
     "loss": "Lỗ",
-    "pending_result": "Chờ duyệt",
+    "pending_result": "Đang làm",
     "overdue": "Quá hạn",
     "due_soon": "Sắp tới hạn",
     "no_deadline": "Chưa có hạn",

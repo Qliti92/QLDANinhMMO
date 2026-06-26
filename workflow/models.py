@@ -80,7 +80,7 @@ class Project(models.Model):
         PAUSED = "PAUSED", "Tạm dừng"
 
     class Result(models.TextChoices):
-        PENDING = "PENDING", "Chờ duyệt"
+        PENDING = "PENDING", "Đang làm"
         PROFIT = "PROFIT", "Lãi"
         LOSS = "LOSS", "Lỗ"
 
@@ -273,9 +273,13 @@ class Notification(models.Model):
 
 
 class TelegramSettings(models.Model):
+    DEFAULT_NOTIFICATION_TEMPLATE = "🔔 {title}\n\n{message}{object_line}"
+
     bot_token = models.CharField(max_length=255, blank=True)
     bot_username = models.CharField(max_length=128, blank=True)
     enabled = models.BooleanField(default=False)
+    show_employee_ranking_to_staff = models.BooleanField(default=True)
+    notification_template = models.TextField(default=DEFAULT_NOTIFICATION_TEMPLATE, blank=True)
     last_update_id = models.BigIntegerField(null=True, blank=True)
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True)

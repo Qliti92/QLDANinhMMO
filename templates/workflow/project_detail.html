@@ -34,24 +34,22 @@
   <div class="col-lg-5">
     <div class="side-panel">
       <h2 class="h5">Thao tác nhanh</h2>
-      {% if request.user.can_manage_projects %}
-        <form method="post" action="{% url 'project_state_update' project.pk %}" class="compact-form mb-3">
+      <form method="post" action="{% url 'project_state_update' project.pk %}" class="compact-form mb-3">
           {% csrf_token %}
           {{ project_state_form.project_state }}
           <button class="btn btn-sm btn-primary"><i class="bi bi-kanban"></i> TT dự án</button>
-        </form>
-      {% endif %}
+      </form>
       <form method="post" action="{% url 'project_status_update' project.pk %}" class="compact-form mb-3">
         {% csrf_token %}
         {{ status_form.status }}
         <button class="btn btn-sm btn-primary"><i class="bi bi-arrow-repeat"></i> TT công việc</button>
       </form>
-      {% if request.user.can_manage_projects %}
-        <form method="post" action="{% url 'project_result_update' project.pk %}" class="compact-form mb-3">
+      <form method="post" action="{% url 'project_result_update' project.pk %}" class="compact-form mb-3">
           {% csrf_token %}
           {{ result_form.result }}
           <button class="btn btn-sm btn-secondary"><i class="bi bi-flag"></i> Kết quả</button>
-        </form>
+      </form>
+      {% if request.user.can_manage_projects %}
         <form method="post" action="{% url 'assign_projects' %}" class="compact-form">
           {% csrf_token %}
           {{ assign_form.project_ids }}

@@ -33,6 +33,7 @@ urlpatterns = [
     path("notifications/", views.NotificationListView.as_view(), name="notifications"),
     path("notifications/<int:pk>/read/", views.NotificationReadView.as_view(), name="notification_read"),
     path("notifications/read-all/", views.NotificationReadAllView.as_view(), name="notification_read_all"),
+    path("settings/", views.GeneralSettingsView.as_view(), name="general_settings"),
     path("telegram/", views.TelegramSettingsView.as_view(), name="telegram_settings"),
     path("telegram/update/", views.TelegramSettingsUpdateView.as_view(), name="telegram_settings_update"),
     path("users/", views.UserListView.as_view(), name="user_list"),

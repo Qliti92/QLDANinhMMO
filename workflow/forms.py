@@ -44,7 +44,7 @@ class ProjectForm(forms.ModelForm):
 class StaffProjectUpdateForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ["status", "note"]
+        fields = ["project_state", "status", "result", "note"]
         labels = {"status": "Trạng thái công việc", "note": "Ghi chú"}
         widgets = {"note": forms.Textarea(attrs={"rows": 4})}
 
@@ -256,6 +256,23 @@ class TelegramSettingsForm(forms.ModelForm):
         apply_bootstrap(self)
 
 
+class GeneralSettingsForm(forms.ModelForm):
+    class Meta:
+        model = TelegramSettings
+        fields = ("show_employee_ranking_to_staff", "notification_template")
+        labels = {
+            "show_employee_ranking_to_staff": "Hiển thị bảng xếp hạng cho nhân viên",
+            "notification_template": "Mẫu nội dung thông báo Telegram",
+        }
+        widgets = {
+            "notification_template": forms.Textarea(attrs={"rows": 7}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        apply_bootstrap(self)
+
+
 class TelegramProfileForm(forms.ModelForm):
     class Meta:
         model = User
@@ -286,9 +303,24 @@ def apply_bootstrap(form):
 
 
 class ProgressUpdateForm(forms.ModelForm):
+    STAGE_CHOICES = [
+        ("PENDING_REVIEW", "Chờ Duyệt"),
+        ("REGISTERED_SUCCESS", "ĐK Thành Công"),
+        ("CAMP_SET", "Đã Set Camp"),
+        ("SPENT", "Đã Chi Tiêu"),
+    ]
+    STAGE_PROGRESS = {
+        "PENDING_REVIEW": 25,
+        "REGISTERED_SUCCESS": 50,
+        "CAMP_SET": 75,
+        "SPENT": 100,
+    }
+
+    progress_stage = forms.ChoiceField(choices=STAGE_CHOICES, label="Tiến trình")
+
     class Meta:
         model = ProjectProgress
-        fields = ["progress_percent", "status_note", "blocker_note"]
+        fields = ["blocker_note"]
         labels = {
             "progress_percent": "Tiến trình (%)",
             "status_note": "Nội dung cập nhật",
@@ -299,6 +331,14 @@ class ProgressUpdateForm(forms.ModelForm):
             "status_note": forms.Textarea(attrs={"rows": 3}),
             "blocker_note": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        stage = cleaned.get("progress_stage")
+        if stage:
+            cleaned["progress_percent"] = self.STAGE_PROGRESS[stage]
+            cleaned["status_note"] = dict(self.STAGE_CHOICES)[stage]
+        return cleaned
 
     def clean_progress_percent(self):
         value = self.cleaned_data["progress_percent"]

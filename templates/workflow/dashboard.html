@@ -89,6 +89,7 @@
   </div>
 </div>
 <div class="row g-3 mb-4">
+  {% if show_employee_ranking %}
   <div class="col-lg-7">
     <h2 class="h5">Bảng xếp hạng nhân viên</h2>
     <div class="table-responsive">
@@ -113,12 +114,13 @@
       </table>
     </div>
   </div>
-  <div class="col-lg-5">
+  {% endif %}
+  <div class="{% if show_employee_ranking %}col-lg-5{% else %}col-12{% endif %}">
     <h2 class="h5">Tóm tắt kết quả</h2>
     <div class="result-stack">
       <div class="result-card profit"><span>Lãi</span><strong>{{ counts.profit }}</strong></div>
       <div class="result-card loss"><span>Lỗ</span><strong>{{ counts.loss }}</strong></div>
-      <div class="result-card pending"><span>Chờ duyệt</span><strong>{{ counts.pending_result }}</strong></div>
+      <div class="result-card pending"><span>Đang làm</span><strong>{{ counts.pending_result }}</strong></div>
     </div>
   </div>
 </div>
