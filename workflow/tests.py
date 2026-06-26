@@ -297,6 +297,22 @@ class WorkflowServiceTests(TestCase):
         self.assertEqual(summary.batch.imported_rows, 2)
         self.assertTrue(Project.objects.filter(project_name="manual-one.example.com").exists())
 
+    def test_import_treats_soft_deleted_project_link_as_duplicate(self):
+        from django.utils import timezone
+
+        Project.objects.create(
+            project_name="Deleted",
+            project_link="deleted.example.com",
+            created_by=self.manager,
+            deleted_at=timezone.now(),
+        )
+
+        summary = ImportService.import_pasted_links("https://deleted.example.com/path", self.manager)
+
+        self.assertEqual(summary.batch.imported_rows, 0)
+        self.assertEqual(summary.batch.duplicate_rows, 1)
+        self.assertEqual(Project.objects.filter(project_link="deleted.example.com").count(), 1)
+
     def test_export_escapes_excel_formula_values(self):
         project = Project.objects.create(
             project_name="=HYPERLINK(\"https://example.com\")",

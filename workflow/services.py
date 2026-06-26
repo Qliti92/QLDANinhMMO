@@ -626,7 +626,7 @@ class ImportService:
         seen_domains = set()
         existing_domains = {
             cls.normalize_domain(project.project_link): project
-            for project in Project.objects.active().select_related("current_employee")
+            for project in Project.objects.select_related("current_employee")
         }
         existing_domains.pop("", None)
         imported = []

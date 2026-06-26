@@ -1,4 +1,5 @@
 from io import BytesIO
+import logging
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -36,6 +37,7 @@ from .repositories import ProjectRepository, TaskRepository
 from .services import ImportService, NotificationService, ProgressService, ProjectService, ReportService, TaskService, TelegramService, build_projects_workbook, excel_safe, log_activity
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def page_not_found(request, exception):
@@ -198,6 +200,10 @@ class ImportExcelView(ManagerRequiredMixin, FormView):
                 summary = ImportService.import_pasted_links(form.cleaned_data["links"], self.request.user, request=self.request)
         except ValueError as exc:
             form.add_error(None, str(exc))
+            return self.form_invalid(form)
+        except Exception:
+            logger.exception("Import failed for user_id=%s", self.request.user.pk)
+            form.add_error(None, "Khong import duoc du lieu. Vui long kiem tra file/link hoac xem log server.")
             return self.form_invalid(form)
         messages.success(
             self.request,
