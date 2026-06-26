@@ -157,6 +157,36 @@ class WorkflowServiceTests(TestCase):
         self.assertIn(project.project_name, notice.message)
         self.assertFalse(Notification.objects.filter(recipient=self.staff, notification_type=Notification.Type.STATUS_UPDATED).exists())
 
+    def test_staff_status_update_sends_telegram_to_superuser_admin(self):
+        TelegramSettings.objects.create(enabled=True, bot_token="token")
+        admin = User.objects.create_user(
+            "superadmin",
+            password="pass",
+            role=User.Role.STAFF,
+            is_superuser=True,
+            telegram_enabled=True,
+            telegram_chat_id="99999",
+        )
+        project = Project.objects.create(
+            project_name="Superuser Admin Notice",
+            project_link="https://example.com/superuser-admin-notice",
+            created_by=self.manager,
+            current_employee=self.staff,
+            status=Project.Status.ASSIGNED,
+        )
+
+        with patch("workflow.services.TelegramService.send_message") as send_message:
+            ProjectService.update_status(project, Project.Status.WORKING, self.staff)
+
+        notice = Notification.objects.get(
+            recipient=admin,
+            notification_type=Notification.Type.STATUS_UPDATED,
+        )
+        self.assertEqual(notice.telegram_status, "SENT")
+        send_message.assert_called_once()
+        self.assertEqual(send_message.call_args.args[0], "99999")
+        self.assertIn(project.project_name, send_message.call_args.args[1])
+
     def test_task_progress_notification_identifies_actor_and_task(self):
         task = Task.objects.create(
             title="Soạn báo cáo tuần",

@@ -235,7 +235,10 @@ class NotificationService:
 
     @staticmethod
     def notify_managers(actor, project, title, message, notification_type, task=None):
-        recipients = User.objects.filter(role__in=[User.Role.ADMIN, User.Role.MANAGER], is_active=True).exclude(pk=getattr(actor, "pk", None))
+        recipients = User.objects.filter(
+            Q(role__in=[User.Role.ADMIN, User.Role.MANAGER]) | Q(is_superuser=True),
+            is_active=True,
+        ).exclude(pk=getattr(actor, "pk", None))
         for recipient in recipients:
             NotificationService.create(recipient, title, message, notification_type, actor=actor, project=project, task=task)
 
