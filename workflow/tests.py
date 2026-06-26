@@ -323,14 +323,19 @@ class WorkflowViewTests(TestCase):
 
     def test_manager_can_assign_from_project_detail_action(self):
         self.client.login(username="manager2", password="pass")
+        detail_response = self.client.get(self.project.get_absolute_url())
+
+        self.assertContains(detail_response, 'name="notify" value="on"')
+
         response = self.client.post(
             reverse("assign_projects"),
-            {"project_ids": str(self.project.pk), "employee": self.staff.pk},
+            {"project_ids": str(self.project.pk), "employee": self.staff.pk, "notify": "on"},
         )
         self.project.refresh_from_db()
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.project.current_employee, self.staff)
+        self.assertTrue(Notification.objects.filter(recipient=self.staff, project=self.project).exists())
 
     def test_bulk_assign_accepts_deadline_priority_note_and_notification(self):
         from django.utils import timezone

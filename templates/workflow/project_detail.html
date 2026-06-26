@@ -53,6 +53,7 @@
         <form method="post" action="{% url 'assign_projects' %}" class="compact-form">
           {% csrf_token %}
           {{ assign_form.project_ids }}
+          <input type="hidden" name="notify" value="on">
           {{ assign_form.employee }}
           <button class="btn btn-sm btn-outline-primary"><i class="bi bi-person-plus"></i> Giao</button>
         </form>
