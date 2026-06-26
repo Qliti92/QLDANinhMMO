@@ -64,6 +64,19 @@ class WorkflowServiceTests(TestCase):
         self.assertIn(project.project_name, notice.message)
         self.assertIn("Khẩn cấp", notice.message)
 
+    def test_delete_project_removes_database_record(self):
+        project = Project.objects.create(
+            project_name="Delete Me",
+            project_link="delete-me.example.com",
+            created_by=self.manager,
+        )
+
+        count = ProjectService.soft_delete([project], self.manager)
+
+        self.assertEqual(count, 1)
+        self.assertFalse(Project.objects.filter(project_link="delete-me.example.com").exists())
+        self.assertTrue(ActivityLog.objects.filter(action=ActivityLog.Action.PROJECT_DELETED).exists())
+
     def test_assign_sends_telegram_to_linked_staff(self):
         TelegramSettings.objects.create(enabled=True, bot_token="token")
         self.staff.telegram_enabled = True

@@ -190,14 +190,14 @@ class ProjectService:
     def soft_delete(projects, user, request=None) -> int:
         count = 0
         for project in projects:
-            project.soft_delete(user=user)
             log_activity(
                 user,
                 ActivityLog.Action.PROJECT_DELETED,
-                "Đã xóa mềm dự án",
+                "Đã xóa vĩnh viễn dự án",
                 project=project,
                 request=request,
             )
+            project.delete()
             count += 1
         return count
 
