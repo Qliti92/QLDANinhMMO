@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from .models import Project, ProjectProgress, Task, TaskProgress, TelegramSettings
 
@@ -25,10 +27,11 @@ class MultipleFileField(forms.FileField):
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ["project_name", "project_link", "project_state", "status", "result", "note"]
+        fields = ["project_name", "project_link", "manager", "project_state", "status", "result", "note"]
         labels = {
             "project_name": "Tên dự án",
             "project_link": "Domain dự án",
+            "manager": "Quản lý phụ trách",
             "project_state": "Trạng thái dự án",
             "status": "Trạng thái công việc",
             "result": "Kết quả",
@@ -37,7 +40,11 @@ class ProjectForm(forms.ModelForm):
         widgets = {"note": forms.Textarea(attrs={"rows": 4})}
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
+        self.fields["manager"].queryset = manager_queryset()
+        if user and user.is_manager_role:
+            self.fields.pop("manager")
         apply_bootstrap(self)
 
 
@@ -95,8 +102,9 @@ class AssignmentForm(forms.Form):
     notify = forms.BooleanField(label="Thông báo cho nhân viên", required=False, initial=True)
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
-        self.fields["employee"].queryset = User.objects.filter(role=User.Role.STAFF, is_active=True)
+        self.fields["employee"].queryset = staff_queryset_for(user)
         apply_bootstrap(self)
 
     def clean_project_ids(self):
@@ -109,6 +117,7 @@ class AssignmentForm(forms.Form):
 
 class BulkActionForm(forms.Form):
     ACTION_ASSIGN = "assign"
+    ACTION_ASSIGN_MANAGER = "assign_manager"
     ACTION_CHANGE_PROJECT_STATE = "change_project_state"
     ACTION_MARK_PROFIT = "mark_profit"
     ACTION_MARK_LOSS = "mark_loss"
@@ -117,6 +126,7 @@ class BulkActionForm(forms.Form):
 
     ACTION_CHOICES = [
         (ACTION_ASSIGN, "Giao nhân viên"),
+        (ACTION_ASSIGN_MANAGER, "Giao quản lý"),
         (ACTION_CHANGE_PROJECT_STATE, "Đổi trạng thái dự án"),
         (ACTION_MARK_PROFIT, "Đánh dấu lãi"),
         (ACTION_MARK_LOSS, "Đánh dấu lỗ"),
@@ -127,6 +137,7 @@ class BulkActionForm(forms.Form):
     action = forms.ChoiceField(choices=ACTION_CHOICES, label="Hành động")
     project_ids = forms.MultipleChoiceField(required=True)
     employee = forms.ModelChoiceField(queryset=User.objects.none(), required=False, label="Nhân viên")
+    manager = forms.ModelChoiceField(queryset=User.objects.none(), required=False, label="Quản lý")
     project_state = forms.ChoiceField(choices=Project.ProjectState.choices, required=False, label="Trạng thái dự án")
     status = forms.ChoiceField(choices=Project.Status.choices, required=False, label="Trạng thái công việc")
     deadline_at = forms.DateTimeField(label="Hạn xử lý", required=False, widget=forms.DateTimeInput(attrs={"type": "datetime-local"}))
@@ -136,15 +147,19 @@ class BulkActionForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         project_queryset = kwargs.pop("project_queryset", Project.objects.none())
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
         self.fields["project_ids"].choices = [(str(project.pk), project.project_name) for project in project_queryset]
-        self.fields["employee"].queryset = User.objects.filter(role=User.Role.STAFF, is_active=True)
+        self.fields["employee"].queryset = staff_queryset_for(user)
+        self.fields["manager"].queryset = manager_queryset() if user and user.is_admin_role else User.objects.none()
 
     def clean(self):
         cleaned = super().clean()
         action = cleaned.get("action")
         if action == self.ACTION_ASSIGN and not cleaned.get("employee"):
             self.add_error("employee", "Vui lòng chọn nhân viên để giao việc.")
+        if action == self.ACTION_ASSIGN_MANAGER and not cleaned.get("manager"):
+            self.add_error("manager", "Vui lòng chọn quản lý phụ trách.")
         if action == self.ACTION_CHANGE_PROJECT_STATE and not cleaned.get("project_state"):
             self.add_error("project_state", "Vui lòng chọn trạng thái dự án.")
         if action == self.ACTION_CHANGE_STATUS and not cleaned.get("status"):
@@ -182,20 +197,38 @@ class QuickResultForm(forms.Form):
         apply_bootstrap(self)
 
 
+class QuickProjectUpdateForm(forms.Form):
+    project_state = forms.ChoiceField(choices=Project.ProjectState.choices, label="Trạng thái dự án")
+    status = forms.ChoiceField(choices=Project.Status.choices, label="Trạng thái công việc")
+    result = forms.ChoiceField(choices=Project.Result.choices, label="Kết quả")
+
+    def __init__(self, *args, **kwargs):
+        staff_only = kwargs.pop("staff_only", False)
+        super().__init__(*args, **kwargs)
+        if staff_only:
+            allowed = {Project.Status.ASSIGNED, Project.Status.WORKING, Project.Status.DONE}
+            self.fields["status"].choices = [
+                choice for choice in Project.Status.choices if choice[0] in allowed
+            ]
+        apply_bootstrap(self)
+
+
 class UserCreateForm(UserCreationForm):
     class Meta(UserCreationForm.Meta):
         model = User
-        fields = ("username", "email", "role", "is_active")
+        fields = ("username", "email", "role", "manager", "is_active")
         labels = {
             "username": "Tên đăng nhập",
             "email": "Thư điện tử",
             "role": "Vai trò",
+            "manager": "Quản lý trực tiếp",
             "is_active": "Đang hoạt động",
         }
         help_texts = {
             "username": "",
             "email": "",
             "role": "",
+            "manager": "Chọn khi tài khoản là nhân viên.",
             "is_active": "",
         }
 
@@ -205,17 +238,25 @@ class UserCreateForm(UserCreationForm):
         self.fields["password2"].label = "Nhập lại mật khẩu"
         self.fields["password1"].help_text = ""
         self.fields["password2"].help_text = ""
+        self.fields["manager"].queryset = manager_queryset()
         apply_bootstrap(self)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("role") != User.Role.STAFF:
+            cleaned["manager"] = None
+        return cleaned
 
 
 class UserUpdateForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ("username", "email", "role", "is_active", "is_staff")
+        fields = ("username", "email", "role", "manager", "is_active", "is_staff")
         labels = {
             "username": "Tên đăng nhập",
             "email": "Thư điện tử",
             "role": "Vai trò",
+            "manager": "Quản lý trực tiếp",
             "is_active": "Đang hoạt động",
             "is_staff": "Cho phép vào Django admin",
         }
@@ -223,13 +264,21 @@ class UserUpdateForm(forms.ModelForm):
             "username": "",
             "email": "",
             "role": "",
+            "manager": "Chọn khi tài khoản là nhân viên.",
             "is_active": "",
             "is_staff": "",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["manager"].queryset = manager_queryset().exclude(pk=getattr(self.instance, "pk", None))
         apply_bootstrap(self)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("role") != User.Role.STAFF:
+            cleaned["manager"] = None
+        return cleaned
 
 
 class TelegramSettingsForm(forms.ModelForm):
@@ -302,6 +351,17 @@ def apply_bootstrap(form):
             widget.attrs.setdefault("class", "form-control")
 
 
+def manager_queryset():
+    return User.objects.filter(role=User.Role.MANAGER, is_active=True)
+
+
+def staff_queryset_for(user):
+    qs = User.objects.filter(role=User.Role.STAFF, is_active=True)
+    if user and user.is_manager_role:
+        return qs.filter(manager=user)
+    return qs
+
+
 class ProgressUpdateForm(forms.ModelForm):
     STAGE_CHOICES = [
         ("PENDING_REVIEW", "Chờ Duyệt"),
@@ -317,6 +377,11 @@ class ProgressUpdateForm(forms.ModelForm):
     }
 
     progress_stage = forms.ChoiceField(choices=STAGE_CHOICES, label="Tiến trình")
+    registration_success_link = forms.CharField(
+        label="Link ĐK thành công",
+        required=False,
+        widget=forms.URLInput(attrs={"placeholder": "https://example.com/..."}),
+    )
 
     class Meta:
         model = ProjectProgress
@@ -338,6 +403,21 @@ class ProgressUpdateForm(forms.ModelForm):
         if stage:
             cleaned["progress_percent"] = self.STAGE_PROGRESS[stage]
             cleaned["status_note"] = dict(self.STAGE_CHOICES)[stage]
+        link = (cleaned.get("registration_success_link") or "").strip()
+        if stage == "REGISTERED_SUCCESS":
+            if not link:
+                self.add_error("registration_success_link", "Vui lòng nhập link khi cập nhật ĐK Thành Công.")
+            else:
+                if "://" not in link:
+                    link = f"https://{link}"
+                try:
+                    URLValidator()(link)
+                except DjangoValidationError:
+                    self.add_error("registration_success_link", "Link không hợp lệ.")
+                else:
+                    cleaned["registration_success_link"] = link
+        else:
+            cleaned["registration_success_link"] = ""
         return cleaned
 
     def clean_progress_percent(self):
@@ -374,8 +454,9 @@ class TaskForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
-        self.fields["assignee"].queryset = User.objects.filter(role=User.Role.STAFF, is_active=True)
+        self.fields["assignee"].queryset = staff_queryset_for(user)
         apply_bootstrap(self)
 
 

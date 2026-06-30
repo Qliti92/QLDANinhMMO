@@ -936,39 +936,46 @@ body {
 
 .project-table-admin th:nth-child(2),
 .project-table-staff th:nth-child(1) {
-  width: 250px;
+  width: 170px;
 }
 
 .project-table-admin th:nth-child(3),
 .project-table-staff th:nth-child(2) {
-  width: 116px;
+  width: 70px;
 }
 
 .project-table-admin th:nth-child(4),
 .project-table-admin th:nth-child(5),
-.project-table-staff th:nth-child(4),
 .project-table-staff th:nth-child(3) {
-  width: 86px;
+  width: 94px;
 }
 
 .project-table-admin th:nth-child(6),
+.project-table-staff th:nth-child(4) {
+  width: 86px;
+}
+
 .project-table-admin th:nth-child(7),
-.project-table-staff th:nth-child(6),
 .project-table-staff th:nth-child(5) {
   width: 86px;
 }
 
 .project-table-admin th:nth-child(8),
+.project-table-staff th:nth-child(6) {
+  width: 86px;
+}
+
+.project-table-admin th:nth-child(9),
 .project-table-staff th:nth-child(7) {
   width: 118px;
 }
 
-.project-table-admin th:nth-child(9),
+.project-table-admin th:nth-child(10),
 .project-table-staff th:nth-child(8) {
   width: 86px;
 }
 
-.project-table-admin th:nth-child(10),
+.project-table-admin th:nth-child(11),
 .project-table-staff th:nth-child(9) {
   width: 126px;
 }

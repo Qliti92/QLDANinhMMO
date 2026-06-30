@@ -63,7 +63,7 @@
     <div class="alert-panel alert-danger-soft">
       <h2 class="h6">Dự án quá hạn</h2>
       {% for project in overdue_projects %}
-        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>{{ project.current_employee|default:"-" }}</small></a>
+        <a href="{{ project.get_absolute_url }}" title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }} <small>{{ project.current_employee|default:"-" }}</small></a>
       {% empty %}<p class="text-muted mb-0">Không có dự án quá hạn.</p>{% endfor %}
     </div>
   </div>
@@ -71,7 +71,7 @@
     <div class="alert-panel alert-warning-soft">
       <h2 class="h6">Sắp tới hạn</h2>
       {% for project in due_soon_projects %}
-        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>{{ project.deadline_at|date:"d/m H:i" }}</small></a>
+        <a href="{{ project.get_absolute_url }}" title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }} <small>{{ project.deadline_at|date:"d/m H:i" }}</small></a>
       {% empty %}<p class="text-muted mb-0">Không có dự án sắp tới hạn.</p>{% endfor %}
     </div>
   </div>
@@ -79,10 +79,10 @@
     <div class="alert-panel alert-purple-soft">
       <h2 class="h6">Khẩn cấp / vướng mắc</h2>
       {% for project in urgent_projects %}
-        <a href="{{ project.get_absolute_url }}">{{ project.project_name }} <small>Khẩn cấp</small></a>
+        <a href="{{ project.get_absolute_url }}" title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }} <small>Khẩn cấp</small></a>
       {% empty %}
         {% for item in blocked_progress %}
-          <a href="{{ item.project.get_absolute_url }}">{{ item.project.project_name }} <small>{{ item.blocker_note|truncatechars:24 }}</small></a>
+          <a href="{{ item.project.get_absolute_url }}" title="{{ item.project.project_name }}">{{ item.project.project_name|truncatechars:28 }} <small>{{ item.blocker_note|truncatechars:24 }}</small></a>
         {% empty %}<p class="text-muted mb-0">Không có cảnh báo.</p>{% endfor %}
       {% endfor %}
     </div>
@@ -127,11 +127,20 @@
 <h2 class="h5">Dự án gần đây</h2>
 <div class="table-responsive">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Tên dự án</th><th>Trạng thái dự án</th><th>Trạng thái công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Nhân viên</th><th></th></tr></thead>
+    <thead><tr><th>Tên dự án</th><th>Link</th><th>Trạng thái dự án</th><th>Trạng thái công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn xử lý</th><th>Nhân viên</th><th></th></tr></thead>
     <tbody>
       {% for project in recent_projects %}
         <tr>
-          <td>{{ project.project_name }}</td>
+          <td title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }}</td>
+          <td>
+            {% if project.registration_success_link %}
+              <a class="btn btn-sm btn-success py-0 px-2" href="{{ project.registration_success_link }}" target="_blank" rel="noopener">
+                <i class="bi bi-link-45deg"></i> link
+              </a>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
           <td><span class="badge {{ project.project_state|project_state_badge }}">{{ project.project_state|project_state_label }}</span></td>
           <td><span class="badge {{ project.status|status_badge }}">{{ project.status|status_label }}</span></td>
           <td><span class="badge {{ project.result|result_badge }}">{{ project.result|result_label }}</span></td>
@@ -141,7 +150,7 @@
           <td><a class="btn btn-sm btn-outline-primary" href="{{ project.get_absolute_url }}"><i class="bi bi-eye"></i> Xem</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="5" class="text-muted">Chưa có dự án.</td></tr>
+        <tr><td colspan="9" class="text-muted">Chưa có dự án.</td></tr>
       {% endfor %}
     </tbody>
   </table>

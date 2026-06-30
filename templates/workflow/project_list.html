@@ -65,6 +65,7 @@
       <div class="bulk-grid">
         <select class="form-select form-select-sm bulk-action-field" name="action">
           <option value="assign">Giao nhân viên</option>
+          {% if request.user.is_admin_role %}<option value="assign_manager">Giao quản lý</option>{% endif %}
           <option value="change_project_state">Đổi trạng thái dự án</option>
           <option value="mark_profit">Đánh dấu lãi</option>
           <option value="mark_loss">Đánh dấu lỗ</option>
@@ -75,6 +76,12 @@
           <option value="">Nhân viên</option>
           {% for employee in employees %}<option value="{{ employee.pk }}">{{ employee.username }}</option>{% endfor %}
         </select>
+        {% if request.user.is_admin_role %}
+          <select class="form-select form-select-sm" name="manager">
+            <option value="">Quản lý</option>
+            {% for manager in managers %}<option value="{{ manager.pk }}">{{ manager.username }}</option>{% endfor %}
+          </select>
+        {% endif %}
         <input class="form-control form-control-sm bulk-deadline-field" type="datetime-local" name="deadline_at" title="Hạn xử lý">
         <select class="form-select form-select-sm bulk-priority-field" name="priority">
           <option value="">Độ ưu tiên</option>
@@ -101,14 +108,32 @@
       <thead>
         <tr>
           {% if request.user.can_manage_projects %}<th><input type="checkbox" onclick="document.querySelectorAll('.row-check').forEach(c => c.checked = this.checked)"></th>{% endif %}
-          <th>Tên dự án</th><th>Nhân viên</th><th>TT dự án</th><th>TT công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn</th><th>Tiến trình</th><th></th>
+          <th>Tên dự án</th><th>Link</th><th>Quản lý</th><th>Nhân viên</th><th>TT dự án</th><th>TT công việc</th><th>Kết quả</th><th>Ưu tiên</th><th>Hạn</th><th>Tiến trình</th><th></th>
         </tr>
       </thead>
       <tbody>
       {% for project in projects %}
         <tr>
           {% if request.user.can_manage_projects %}<td><input class="row-check" type="checkbox" name="project_ids" value="{{ project.pk }}"></td>{% endif %}
-          <td class="project-name-cell"><a href="{{ project.get_absolute_url }}">{{ project.project_name }}</a></td>
+          <td class="project-name-cell">
+            <a href="{{ project.get_absolute_url }}" title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }}</a>
+          </td>
+          <td>
+            {% if project.registration_success_link %}
+              <a class="btn btn-sm btn-success py-0 px-2" href="{{ project.registration_success_link }}" target="_blank" rel="noopener">
+                <i class="bi bi-link-45deg"></i> link
+              </a>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+          <td class="project-user-cell">
+            {% if project.manager %}
+              <span class="project-user-chip">{{ project.manager }}</span>
+            {% else %}
+              <span class="project-user-empty">-</span>
+            {% endif %}
+          </td>
           <td class="project-user-cell">
             {% if project.current_employee %}
               <span class="project-user-chip">{{ project.current_employee }}</span>
@@ -135,7 +160,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="{% if request.user.can_manage_projects %}10{% else %}9{% endif %}" class="text-muted">Không có dự án phù hợp.</td></tr>
+        <tr><td colspan="{% if request.user.can_manage_projects %}12{% else %}11{% endif %}" class="text-muted">Không có dự án phù hợp.</td></tr>
       {% endfor %}
       </tbody>
     </table>

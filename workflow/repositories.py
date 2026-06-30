@@ -6,9 +6,17 @@ from .models import Project, Task
 class ProjectRepository:
     @staticmethod
     def visible_to(user) -> QuerySet[Project]:
-        qs = Project.objects.active().select_related("current_employee", "created_by")
-        if user.is_authenticated and user.can_manage_projects:
+        qs = Project.objects.active().select_related("current_employee", "created_by", "manager")
+        if not user.is_authenticated:
+            return qs.none()
+        if user.is_admin_role:
             return qs
+        if user.is_manager_role:
+            return qs.filter(
+                Q(manager=user)
+                | Q(created_by=user)
+                | Q(current_employee__manager=user)
+            ).distinct()
         return qs.filter(current_employee=user)
 
     @staticmethod
@@ -57,8 +65,12 @@ class TaskRepository:
     @staticmethod
     def visible_to(user) -> QuerySet[Task]:
         qs = Task.objects.active().select_related("assignee", "assigned_by")
-        if user.is_authenticated and user.can_manage_projects:
+        if not user.is_authenticated:
+            return qs.none()
+        if user.is_admin_role:
             return qs
+        if user.is_manager_role:
+            return qs.filter(Q(assigned_by=user) | Q(assignee__manager=user)).distinct()
         return qs.filter(assignee=user)
 
     @staticmethod

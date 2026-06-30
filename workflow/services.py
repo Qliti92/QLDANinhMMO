@@ -60,6 +60,34 @@ class ImportSummary:
 class ProjectService:
     @staticmethod
     @transaction.atomic
+    def assign_manager(projects, manager, assigned_by, request=None, notify=True) -> int:
+        count = 0
+        for project in projects:
+            previous_manager_id = project.manager_id
+            project.manager = manager
+            project.save(update_fields=["manager", "updated_at"])
+            log_activity(
+                assigned_by,
+                ActivityLog.Action.PROJECT_ASSIGNED,
+                f"Đã giao dự án cho quản lý {manager.username}",
+                project=project,
+                metadata={"previous_manager_id": previous_manager_id, "manager_id": manager.pk},
+                request=request,
+            )
+            if notify:
+                NotificationService.create(
+                    recipient=manager,
+                    actor=assigned_by,
+                    project=project,
+                    notification_type=Notification.Type.SYSTEM,
+                    title=f"{display_user(assigned_by)} giao dự án cho bạn quản lý",
+                    message=f"{display_user(assigned_by)} đã giao dự án “{project.project_name}” cho bạn phụ trách.",
+                )
+            count += 1
+        return count
+
+    @staticmethod
+    @transaction.atomic
     def assign(projects, employee, assigned_by, request=None, deadline_at=None, priority=None, note="", notify=True) -> int:
         count = 0
         for project in projects:
@@ -235,10 +263,23 @@ class NotificationService:
 
     @staticmethod
     def notify_managers(actor, project, title, message, notification_type, task=None):
-        recipients = User.objects.filter(
-            Q(role__in=[User.Role.ADMIN, User.Role.MANAGER]) | Q(is_superuser=True),
-            is_active=True,
-        ).exclude(pk=getattr(actor, "pk", None))
+        recipient_ids = set(
+            User.objects.filter(Q(role=User.Role.ADMIN) | Q(is_superuser=True), is_active=True)
+            .exclude(pk=getattr(actor, "pk", None))
+            .values_list("pk", flat=True)
+        )
+        actor_manager_id = getattr(actor, "manager_id", None)
+        if actor_manager_id:
+            recipient_ids.add(actor_manager_id)
+        if project:
+            for candidate in (project.manager_id, project.created_by_id):
+                if candidate:
+                    recipient_ids.add(candidate)
+        if task:
+            for candidate in (task.assigned_by_id, getattr(task.assignee, "manager_id", None)):
+                if candidate:
+                    recipient_ids.add(candidate)
+        recipients = User.objects.filter(pk__in=recipient_ids, is_active=True).exclude(pk=getattr(actor, "pk", None))
         for recipient in recipients:
             NotificationService.create(recipient, title, message, notification_type, actor=actor, project=project, task=task)
 
@@ -246,7 +287,7 @@ class NotificationService:
 class ProgressService:
     @staticmethod
     @transaction.atomic
-    def add_progress(project, user, progress_percent, status_note, blocker_note="", request=None):
+    def add_progress(project, user, progress_percent, status_note, blocker_note="", request=None, registration_success_link=""):
         progress = ProjectProgress.objects.create(
             project=project,
             user=user,
@@ -254,12 +295,19 @@ class ProgressService:
             status_note=status_note,
             blocker_note=blocker_note or "",
         )
+        if registration_success_link:
+            project.registration_success_link = registration_success_link
+            project.save(update_fields=["registration_success_link", "updated_at"])
         log_activity(
             user,
             ActivityLog.Action.PROGRESS_UPDATED,
             f"Cập nhật tiến trình {progress_percent}%",
             project=project,
-            metadata={"progress_percent": progress_percent, "blocker_note": blocker_note or ""},
+            metadata={
+                "progress_percent": progress_percent,
+                "blocker_note": blocker_note or "",
+                "registration_success_link": registration_success_link or "",
+            },
             request=request,
         )
         NotificationService.notify_managers(
@@ -680,6 +728,7 @@ class ImportService:
                 project_name=name,
                 project_link=domain,
                 created_by=user,
+                manager=user if user.is_manager_role else None,
                 import_batch=batch,
             )
             existing_domains[domain] = project
@@ -764,8 +813,11 @@ class ReportService:
         }
 
     @staticmethod
-    def employee_kpis():
-        users = User.objects.filter(role=User.Role.STAFF).annotate(
+    def employee_kpis(user=None):
+        users = User.objects.filter(role=User.Role.STAFF)
+        if user and user.is_manager_role:
+            users = users.filter(manager=user)
+        users = users.annotate(
             total_assigned=Count("current_projects", filter=Q(current_projects__deleted_at__isnull=True)),
             completed=Count("current_projects", filter=Q(current_projects__status=Project.Status.DONE, current_projects__deleted_at__isnull=True)),
             profit=Count("current_projects", filter=Q(current_projects__result=Project.Result.PROFIT, current_projects__deleted_at__isnull=True)),
@@ -785,12 +837,13 @@ def build_projects_workbook(projects):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Du an"
-    sheet.append(["Tên dự án", "Domain", "Nhân viên", "Trạng thái dự án", "Trạng thái công việc", "Kết quả", "Ngày tạo"])
+    sheet.append(["Tên dự án", "Domain", "Quản lý", "Nhân viên", "Trạng thái dự án", "Trạng thái công việc", "Kết quả", "Ngày tạo"])
     for project in projects:
         sheet.append(
             [
                 excel_safe(project.project_name),
                 excel_safe(project.project_link),
+                excel_safe(project.manager.username if project.manager else ""),
                 excel_safe(project.current_employee.username if project.current_employee else ""),
                 excel_safe(project.get_project_state_display()),
                 excel_safe(project.get_status_display()),

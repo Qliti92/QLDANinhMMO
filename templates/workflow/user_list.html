@@ -16,19 +16,20 @@
 </form>
 <div class="table-responsive">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Tên đăng nhập</th><th>Thư điện tử</th><th>Vai trò</th><th>Hoạt động</th><th>Quyền quản trị Django</th><th></th></tr></thead>
+    <thead><tr><th>Tên đăng nhập</th><th>Thư điện tử</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th>Hoạt động</th><th>Quyền quản trị Django</th><th></th></tr></thead>
     <tbody>
       {% for user_obj in users %}
         <tr>
           <td>{{ user_obj.username }}</td>
           <td>{{ user_obj.email|default:"-" }}</td>
           <td>{{ user_obj.role|role_label }}</td>
+          <td>{{ user_obj.manager|default:"-" }}</td>
           <td>{{ user_obj.is_active|yesno:"Có,Không" }}</td>
           <td>{{ user_obj.is_staff|yesno:"Có,Không" }}</td>
           <td><a class="btn btn-sm btn-outline-primary" href="{% url 'user_update' user_obj.pk %}"><i class="bi bi-pencil"></i> Sửa</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="6" class="text-muted">Chưa có người dùng.</td></tr>
+        <tr><td colspan="7" class="text-muted">Chưa có người dùng.</td></tr>
       {% endfor %}
     </tbody>
   </table>

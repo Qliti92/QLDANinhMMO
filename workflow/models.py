@@ -17,6 +17,14 @@ class User(AbstractUser):
     telegram_username = models.CharField(max_length=64, blank=True)
     telegram_enabled = models.BooleanField(default=False)
     telegram_link_token = models.CharField(max_length=64, unique=True, blank=True, null=True)
+    manager = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_staff",
+        limit_choices_to={"role": Role.MANAGER},
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -97,6 +105,7 @@ class Project(models.Model):
     result = models.CharField(max_length=20, choices=Result.choices, default=Result.PENDING)
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.NORMAL)
     deadline_at = models.DateTimeField(null=True, blank=True)
+    registration_success_link = models.URLField(blank=True, max_length=1000)
     note = models.TextField(blank=True)
     current_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -104,6 +113,13 @@ class Project(models.Model):
         null=True,
         blank=True,
         related_name="current_projects",
+    )
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_projects",
     )
     import_batch = models.ForeignKey(
         ImportBatch,
@@ -133,6 +149,7 @@ class Project(models.Model):
             models.Index(fields=["priority"], name="wf_pr_priority_idx"),
             models.Index(fields=["deadline_at"], name="wf_pr_deadline_idx"),
             models.Index(fields=["current_employee"], name="wf_pr_employee_idx"),
+            models.Index(fields=["manager"], name="wf_pr_manager_idx"),
             models.Index(fields=["created_at"], name="wf_pr_created_idx"),
         ]
 

@@ -8,7 +8,7 @@ from openpyxl import Workbook, load_workbook
 
 from .forms import ProgressUpdateForm, TaskForm
 from .models import ActivityLog, Assignment, Notification, Project, ProjectProgress, Task, TaskProgress, TelegramSettings
-from .repositories import ProjectRepository
+from .repositories import ProjectRepository, TaskRepository
 from .services import ImportService, NotificationService, ProgressService, ProjectService, TaskService, build_projects_workbook
 
 User = get_user_model()
@@ -17,7 +17,7 @@ User = get_user_model()
 class WorkflowServiceTests(TestCase):
     def setUp(self):
         self.manager = User.objects.create_user("manager", password="pass", role=User.Role.MANAGER)
-        self.staff = User.objects.create_user("staff", password="pass", role=User.Role.STAFF)
+        self.staff = User.objects.create_user("staff", password="pass", role=User.Role.STAFF, manager=self.manager)
 
     def test_assign_updates_current_employee_and_keeps_history(self):
         project = Project.objects.create(
@@ -125,7 +125,6 @@ class WorkflowServiceTests(TestCase):
     def test_project_progress_form_maps_stage_to_percent_and_note(self):
         expected = {
             "PENDING_REVIEW": (25, "Chờ Duyệt"),
-            "REGISTERED_SUCCESS": (50, "ĐK Thành Công"),
             "CAMP_SET": (75, "Đã Set Camp"),
             "SPENT": (100, "Đã Chi Tiêu"),
         }
@@ -136,6 +135,24 @@ class WorkflowServiceTests(TestCase):
                 self.assertTrue(form.is_valid(), form.errors)
                 self.assertEqual(form.cleaned_data["progress_percent"], percent)
                 self.assertEqual(form.cleaned_data["status_note"], note)
+
+        form = ProgressUpdateForm(
+            data={
+                "progress_stage": "REGISTERED_SUCCESS",
+                "registration_success_link": "success.example.com/path",
+                "blocker_note": "",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["progress_percent"], 50)
+        self.assertEqual(form.cleaned_data["status_note"], "ĐK Thành Công")
+        self.assertEqual(form.cleaned_data["registration_success_link"], "https://success.example.com/path")
+
+    def test_project_progress_form_requires_link_for_registered_success(self):
+        form = ProgressUpdateForm(data={"progress_stage": "REGISTERED_SUCCESS", "blocker_note": ""})
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("registration_success_link", form.errors)
 
     def test_staff_progress_creates_update_and_manager_notification(self):
         project = Project.objects.create(
@@ -153,6 +170,25 @@ class WorkflowServiceTests(TestCase):
         self.assertIn(project.project_name, notice.message)
         self.assertIn("45%", notice.message)
 
+    def test_registered_success_progress_saves_link_on_project(self):
+        project = Project.objects.create(
+            project_name="Registered Success",
+            project_link="https://example.com/registered-success",
+            created_by=self.manager,
+            current_employee=self.staff,
+        )
+
+        ProgressService.add_progress(
+            project,
+            self.staff,
+            50,
+            "ĐK Thành Công",
+            registration_success_link="https://success.example.com/account",
+        )
+        project.refresh_from_db()
+
+        self.assertEqual(project.registration_success_link, "https://success.example.com/account")
+
     def test_staff_status_update_notifies_manager(self):
         project = Project.objects.create(
             project_name="Status Update",
@@ -169,6 +205,47 @@ class WorkflowServiceTests(TestCase):
         self.assertEqual(notice.actor, self.staff)
         self.assertIn(project.project_name, notice.message)
         self.assertFalse(Notification.objects.filter(recipient=self.staff, notification_type=Notification.Type.STATUS_UPDATED).exists())
+
+    def test_staff_status_update_notifies_admin_and_direct_manager_only(self):
+        admin = User.objects.create_user("admin-service", password="pass", role=User.Role.ADMIN, is_superuser=True)
+        other_manager = User.objects.create_user("other-manager-service", password="pass", role=User.Role.MANAGER)
+        project = Project.objects.create(
+            project_name="Scoped Status Notice",
+            project_link="https://example.com/scoped-status-notice",
+            created_by=self.manager,
+            manager=self.manager,
+            current_employee=self.staff,
+            status=Project.Status.ASSIGNED,
+        )
+
+        ProjectService.update_status(project, Project.Status.WORKING, self.staff)
+
+        recipients = set(
+            Notification.objects.filter(notification_type=Notification.Type.STATUS_UPDATED)
+            .values_list("recipient__username", flat=True)
+        )
+        self.assertEqual(recipients, {admin.username, self.manager.username})
+        self.assertNotIn(other_manager.username, recipients)
+
+    def test_staff_progress_notifies_admin_and_direct_manager_only(self):
+        admin = User.objects.create_user("admin-progress", password="pass", role=User.Role.ADMIN, is_superuser=True)
+        other_manager = User.objects.create_user("other-manager-progress", password="pass", role=User.Role.MANAGER)
+        project = Project.objects.create(
+            project_name="Scoped Progress Notice",
+            project_link="https://example.com/scoped-progress-notice",
+            created_by=self.manager,
+            manager=self.manager,
+            current_employee=self.staff,
+        )
+
+        ProgressService.add_progress(project, self.staff, 50, "Dang lam")
+
+        recipients = set(
+            Notification.objects.filter(notification_type=Notification.Type.PROGRESS_UPDATED)
+            .values_list("recipient__username", flat=True)
+        )
+        self.assertEqual(recipients, {admin.username, self.manager.username})
+        self.assertNotIn(other_manager.username, recipients)
 
     def test_staff_status_update_sends_telegram_to_superuser_admin(self):
         TelegramSettings.objects.create(enabled=True, bot_token="token")
@@ -218,6 +295,51 @@ class WorkflowServiceTests(TestCase):
         self.assertIn("60%", notice.message)
         self.assertIn("Chờ duyệt số liệu", notice.message)
 
+    def test_staff_task_progress_notifies_admin_and_direct_manager_only(self):
+        admin = User.objects.create_user("admin-task-progress", password="pass", role=User.Role.ADMIN, is_superuser=True)
+        other_manager = User.objects.create_user("other-manager-task-progress", password="pass", role=User.Role.MANAGER)
+        task = Task.objects.create(
+            title="Scoped Task Progress",
+            description="Task scope",
+            assignee=self.staff,
+            assigned_by=self.manager,
+        )
+
+        TaskService.add_progress(task, self.staff, 80, "Gan xong")
+
+        recipients = set(
+            Notification.objects.filter(notification_type=Notification.Type.TASK_PROGRESS_UPDATED)
+            .values_list("recipient__username", flat=True)
+        )
+        self.assertEqual(recipients, {admin.username, self.manager.username})
+        self.assertNotIn(other_manager.username, recipients)
+
+    def test_manager_only_sees_own_scope_tasks(self):
+        other_manager = User.objects.create_user("other-task-manager", password="pass", role=User.Role.MANAGER)
+        other_staff = User.objects.create_user("other-task-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        own_task = Task.objects.create(
+            title="Own Task",
+            description="Own",
+            assignee=self.staff,
+            assigned_by=self.manager,
+        )
+        delegated_team_task = Task.objects.create(
+            title="Team Task",
+            description="Team",
+            assignee=self.staff,
+            assigned_by=other_manager,
+        )
+        Task.objects.create(
+            title="Hidden Task",
+            description="Hidden",
+            assignee=other_staff,
+            assigned_by=other_manager,
+        )
+
+        visible = list(TaskRepository.visible_to(self.manager).order_by("title"))
+
+        self.assertEqual(visible, [own_task, delegated_team_task])
+
     def test_staff_only_sees_assigned_projects(self):
         assigned = Project.objects.create(
             project_name="Assigned",
@@ -232,6 +354,33 @@ class WorkflowServiceTests(TestCase):
         )
 
         self.assertEqual(list(ProjectRepository.visible_to(self.staff)), [assigned])
+
+    def test_manager_only_sees_own_scope_projects(self):
+        other_manager = User.objects.create_user("other-manager", password="pass", role=User.Role.MANAGER)
+        other_staff = User.objects.create_user("other-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        own_project = Project.objects.create(
+            project_name="Own Manager Project",
+            project_link="https://example.com/own-manager-project",
+            created_by=self.manager,
+            manager=self.manager,
+        )
+        team_project = Project.objects.create(
+            project_name="Team Project",
+            project_link="https://example.com/team-project",
+            created_by=other_manager,
+            current_employee=self.staff,
+        )
+        Project.objects.create(
+            project_name="Hidden Other Manager Project",
+            project_link="https://example.com/hidden-other-manager-project",
+            created_by=other_manager,
+            manager=other_manager,
+            current_employee=other_staff,
+        )
+
+        visible = list(ProjectRepository.visible_to(self.manager).order_by("project_name"))
+
+        self.assertEqual(visible, [own_project, team_project])
 
     def test_import_counts_database_and_file_duplicates(self):
         Project.objects.create(
@@ -366,11 +515,12 @@ class WorkflowViewTests(TestCase):
             is_superuser=True,
         )
         self.manager = User.objects.create_user("manager2", password="pass", role=User.Role.MANAGER)
-        self.staff = User.objects.create_user("staff2", password="pass", role=User.Role.STAFF)
+        self.staff = User.objects.create_user("staff2", password="pass", role=User.Role.STAFF, manager=self.manager)
         self.project = Project.objects.create(
             project_name="View Project",
             project_link="https://example.com/view",
             created_by=self.manager,
+            manager=self.manager,
         )
 
     def test_admin_can_open_user_management(self):
@@ -395,6 +545,44 @@ class WorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.project.current_employee, self.staff)
         self.assertTrue(Notification.objects.filter(recipient=self.staff, project=self.project).exists())
+
+    def test_manager_cannot_assign_project_to_staff_outside_team(self):
+        other_manager = User.objects.create_user("outside-manager", password="pass", role=User.Role.MANAGER)
+        outside_staff = User.objects.create_user("outside-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.post(
+            reverse("assign_projects"),
+            {"project_ids": str(self.project.pk), "employee": outside_staff.pk, "notify": "on"},
+        )
+        self.project.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(self.project.current_employee)
+        self.assertFalse(Notification.objects.filter(recipient=outside_staff, project=self.project).exists())
+
+    def test_admin_can_bulk_assign_project_to_manager(self):
+        project = Project.objects.create(
+            project_name="Admin Assigned",
+            project_link="https://example.com/admin-assigned",
+            created_by=self.admin,
+        )
+        self.client.login(username="admin", password="pass")
+
+        response = self.client.post(
+            reverse("bulk_action"),
+            {
+                "action": "assign_manager",
+                "project_ids": [str(project.pk)],
+                "manager": str(self.manager.pk),
+                "notify": "on",
+            },
+        )
+        project.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(project.manager, self.manager)
+        self.assertTrue(Notification.objects.filter(recipient=self.manager, project=project).exists())
 
     def test_bulk_assign_accepts_deadline_priority_note_and_notification(self):
         from django.utils import timezone
@@ -449,12 +637,99 @@ class WorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.project.project_state, Project.ProjectState.AF_LOCKED)
 
+    def test_manager_can_save_quick_project_update_once(self):
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.post(
+            reverse("project_quick_update", args=[self.project.pk]),
+            {
+                "project_state": Project.ProjectState.PAUSED,
+                "status": Project.Status.WORKING,
+                "result": Project.Result.PROFIT,
+            },
+        )
+        self.project.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.project.project_state, Project.ProjectState.PAUSED)
+        self.assertEqual(self.project.status, Project.Status.WORKING)
+        self.assertEqual(self.project.result, Project.Result.PROFIT)
+
     def test_report_page_renders_chart_data(self):
         self.client.login(username="manager2", password="pass")
         response = self.client.get(reverse("reports"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "du-lieu-trang-thai")
+
+    def test_manager_project_list_excludes_other_manager_projects(self):
+        other_manager = User.objects.create_user("list-other-manager", password="pass", role=User.Role.MANAGER)
+        other_staff = User.objects.create_user("list-other-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        hidden_project = Project.objects.create(
+            project_name="Hidden Other Team",
+            project_link="https://example.com/hidden-other-team",
+            created_by=other_manager,
+            manager=other_manager,
+            current_employee=other_staff,
+        )
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        projects = list(response.context["projects"])
+        self.assertIn(self.project, projects)
+        self.assertNotIn(hidden_project, projects)
+
+    def test_manager_report_counts_only_own_scope_projects(self):
+        other_manager = User.objects.create_user("report-other-manager", password="pass", role=User.Role.MANAGER)
+        other_staff = User.objects.create_user("report-other-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        Project.objects.create(
+            project_name="Hidden Report Project",
+            project_link="https://example.com/hidden-report-project",
+            created_by=other_manager,
+            manager=other_manager,
+            current_employee=other_staff,
+        )
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("reports"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["counts"]["total"], 1)
+
+    def test_manager_notification_list_excludes_other_team_notifications(self):
+        other_manager = User.objects.create_user("notice-other-manager", password="pass", role=User.Role.MANAGER)
+        other_staff = User.objects.create_user("notice-other-staff", password="pass", role=User.Role.STAFF, manager=other_manager)
+        hidden_project = Project.objects.create(
+            project_name="Hidden Notice Project",
+            project_link="https://example.com/hidden-notice-project",
+            created_by=other_manager,
+            manager=other_manager,
+            current_employee=other_staff,
+        )
+        visible_notice = Notification.objects.create(
+            recipient=self.manager,
+            actor=self.staff,
+            project=self.project,
+            title="Visible",
+            message="Visible notice",
+        )
+        hidden_notice = Notification.objects.create(
+            recipient=other_manager,
+            actor=other_staff,
+            project=hidden_project,
+            title="Hidden",
+            message="Hidden notice",
+        )
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("notifications"))
+
+        self.assertEqual(response.status_code, 200)
+        notifications = list(response.context["notifications"])
+        self.assertIn(visible_notice, notifications)
+        self.assertNotIn(hidden_notice, notifications)
 
     def test_staff_can_submit_progress_for_assigned_project(self):
         self.project.current_employee = self.staff
@@ -468,6 +743,45 @@ class WorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(ProjectProgress.objects.filter(project=self.project, progress_percent=75, status_note="Đã Set Camp").exists())
+
+    def test_staff_registered_success_progress_requires_and_saves_link(self):
+        self.project.current_employee = self.staff
+        self.project.save(update_fields=["current_employee"])
+        self.client.login(username="staff2", password="pass")
+
+        missing_response = self.client.post(
+            reverse("project_progress_update", args=[self.project.pk]),
+            {"progress_stage": "REGISTERED_SUCCESS", "blocker_note": ""},
+        )
+        self.project.refresh_from_db()
+        self.assertEqual(missing_response.status_code, 302)
+        self.assertEqual(self.project.registration_success_link, "")
+        self.assertFalse(ProjectProgress.objects.filter(project=self.project, status_note="ĐK Thành Công").exists())
+
+        response = self.client.post(
+            reverse("project_progress_update", args=[self.project.pk]),
+            {
+                "progress_stage": "REGISTERED_SUCCESS",
+                "registration_success_link": "success.example.com/dk",
+                "blocker_note": "",
+            },
+        )
+        self.project.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.project.registration_success_link, "https://success.example.com/dk")
+        self.assertTrue(ProjectProgress.objects.filter(project=self.project, progress_percent=50, status_note="ĐK Thành Công").exists())
+
+    def test_project_list_shows_registered_success_link_label(self):
+        self.project.registration_success_link = "https://success.example.com/dk"
+        self.project.save(update_fields=["registration_success_link"])
+        self.client.login(username="manager2", password="pass")
+
+        response = self.client.get(reverse("project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="https://success.example.com/dk"')
+        self.assertContains(response, "bi-link-45deg")
 
     def test_staff_can_update_assigned_project_state_and_result(self):
         self.project.current_employee = self.staff

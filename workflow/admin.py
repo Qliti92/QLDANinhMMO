@@ -7,12 +7,12 @@ from .models import ActivityLog, Assignment, ImportBatch, Notification, Project,
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
-        ("Quy trình", {"fields": ("role",)}),
+        ("Quy trình", {"fields": ("role", "manager")}),
         ("Telegram", {"fields": ("telegram_enabled", "telegram_chat_id", "telegram_username", "telegram_link_token")}),
     )
     readonly_fields = ("telegram_link_token",)
-    list_display = ("username", "email", "role", "telegram_enabled", "telegram_chat_id", "is_active", "is_staff")
-    list_filter = ("role", "telegram_enabled", "is_active", "is_staff")
+    list_display = ("username", "email", "role", "manager", "telegram_enabled", "telegram_chat_id", "is_active", "is_staff")
+    list_filter = ("role", "manager", "telegram_enabled", "is_active", "is_staff")
 
 
 class AssignmentInline(admin.TabularInline):
@@ -23,8 +23,8 @@ class AssignmentInline(admin.TabularInline):
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ("project_name", "status", "result", "current_employee", "created_at", "deleted_at")
-    list_filter = ("status", "result", "current_employee")
+    list_display = ("project_name", "manager", "status", "result", "current_employee", "created_at", "deleted_at")
+    list_filter = ("manager", "status", "result", "current_employee")
     search_fields = ("project_name", "project_link")
     readonly_fields = ("created_at", "updated_at", "completed_at", "result_updated_at")
     inlines = [AssignmentInline]

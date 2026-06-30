@@ -19,6 +19,7 @@ from .forms import (
     ImportExcelForm,
     ProjectForm,
     ProgressUpdateForm,
+    QuickProjectUpdateForm,
     QuickProjectStateForm,
     QuickResultForm,
     QuickStatusForm,
@@ -40,6 +41,13 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def scoped_staff_queryset(user):
+    qs = User.objects.filter(role=User.Role.STAFF, is_active=True)
+    if user.is_manager_role:
+        return qs.filter(manager=user)
+    return qs
+
+
 def page_not_found(request, exception):
     return render(request, "404.html", status=404)
 
@@ -54,7 +62,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context["counts"] = ReportService.dashboard_counts(qs)
         context["recent_projects"] = qs[:10]
         context["show_employee_ranking"] = self.request.user.can_manage_projects or telegram_settings.show_employee_ranking_to_staff
-        context["employee_ranking"] = ReportService.employee_kpis()[:8] if context["show_employee_ranking"] else []
+        context["employee_ranking"] = ReportService.employee_kpis(self.request.user)[:8] if context["show_employee_ranking"] else []
         active = qs.exclude(status__in=[Project.Status.DONE, Project.Status.CANCELLED])
         now = timezone.now()
         context["stat_groups"] = [
@@ -90,8 +98,9 @@ class ProjectListView(LoginRequiredMixin, ListView):
         context["statuses"] = Project.Status.choices
         context["results"] = Project.Result.choices
         context["priorities"] = Project.Priority.choices
-        context["employees"] = User.objects.filter(role=User.Role.STAFF, is_active=True)
-        context["assign_form"] = AssignmentForm()
+        context["employees"] = scoped_staff_queryset(self.request.user)
+        context["managers"] = User.objects.filter(role=User.Role.MANAGER, is_active=True)
+        context["assign_form"] = AssignmentForm(user=self.request.user)
         return context
 
 
@@ -105,12 +114,17 @@ class ProjectDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["assign_form"] = AssignmentForm(initial={"project_ids": str(self.object.pk)})
-        context["project_state_form"] = QuickProjectStateForm(initial={"project_state": self.object.project_state})
-        context["status_form"] = QuickStatusForm(
-            initial={"status": self.object.status},
+        context["assign_form"] = AssignmentForm(initial={"project_ids": str(self.object.pk)}, user=self.request.user)
+        context["quick_update_form"] = QuickProjectUpdateForm(
+            initial={
+                "project_state": self.object.project_state,
+                "status": self.object.status,
+                "result": self.object.result,
+            },
             staff_only=not self.request.user.can_manage_projects,
         )
+        context["project_state_form"] = QuickProjectStateForm(initial={"project_state": self.object.project_state})
+        context["status_form"] = QuickStatusForm(initial={"status": self.object.status}, staff_only=not self.request.user.can_manage_projects)
         context["result_form"] = QuickResultForm(initial={"result": self.object.result})
         context["progress_form"] = ProgressUpdateForm()
         return context
@@ -121,8 +135,15 @@ class ProjectCreateView(ManagerRequiredMixin, CreateView):
     form_class = ProjectForm
     template_name = "workflow/project_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        if self.request.user.is_manager_role:
+            form.instance.manager = self.request.user
         response = super().form_valid(form)
         log_activity(
             self.request.user,
@@ -144,6 +165,12 @@ class ProjectUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form_class(self):
         return ProjectForm if self.request.user.can_manage_projects else StaffProjectUpdateForm
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        if self.request.user.can_manage_projects:
+            kwargs["user"] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         before_project_state = self.object.project_state
@@ -181,10 +208,57 @@ class ProjectUpdateView(LoginRequiredMixin, UpdateView):
 
 class ProjectDeleteView(ManagerRequiredMixin, View):
     def post(self, request, pk):
-        project = get_object_or_404(Project.objects.active(), pk=pk)
+        project = get_object_or_404(ProjectRepository.visible_to(request.user), pk=pk)
         ProjectService.soft_delete([project], request.user, request=request)
         messages.success(request, "Đã xóa dự án.")
         return redirect("project_list")
+
+
+class ProjectQuickUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        project = get_object_or_404(ProjectRepository.visible_to(request.user), pk=pk)
+        form = QuickProjectUpdateForm(request.POST, staff_only=not request.user.can_manage_projects)
+        if not form.is_valid():
+            messages.error(request, "Không thể lưu thao tác nhanh.")
+            return redirect(project.get_absolute_url())
+
+        before_project_state = project.project_state
+        before_status = project.status
+        before_result = project.result
+        after_project_state = form.cleaned_data["project_state"]
+        after_status = form.cleaned_data["status"]
+        after_result = form.cleaned_data["result"]
+
+        if before_project_state != after_project_state:
+            project.project_state = after_project_state
+            project.save(update_fields=["project_state", "updated_at"])
+            log_activity(
+                request.user,
+                ActivityLog.Action.PROJECT_UPDATED,
+                f"Đã đổi trạng thái dự án thành {project.get_project_state_display()}",
+                project=project,
+                request=request,
+            )
+            if not request.user.can_manage_projects:
+                NotificationService.notify_managers(
+                    actor=request.user,
+                    project=project,
+                    title=f"{request.user} cập nhật trạng thái dự án",
+                    message=f"{request.user} đã cập nhật trạng thái dự án “{project.project_name}” thành {project.get_project_state_display()}.",
+                    notification_type=Notification.Type.STATUS_UPDATED,
+                )
+
+        if before_status != after_status:
+            ProjectService.update_status(project, after_status, request.user, request=request)
+
+        if before_result != after_result:
+            ProjectService.update_result(project, after_result, request.user, request=request)
+
+        if before_project_state == after_project_state and before_status == after_status and before_result == after_result:
+            messages.info(request, "Không có thay đổi mới.")
+        else:
+            messages.success(request, "Đã lưu thao tác nhanh.")
+        return redirect(project.get_absolute_url())
 
 
 class ImportExcelView(ManagerRequiredMixin, FormView):
@@ -218,11 +292,17 @@ class ImportBatchListView(ManagerRequiredMixin, ListView):
     context_object_name = "batches"
     paginate_by = 25
 
+    def get_queryset(self):
+        qs = ImportBatch.objects.select_related("uploaded_by")
+        if self.request.user.is_manager_role:
+            qs = qs.filter(uploaded_by=self.request.user)
+        return qs
+
 
 class BulkActionView(ManagerRequiredMixin, View):
     def post(self, request):
         qs = ProjectRepository.visible_to(request.user)
-        form = BulkActionForm(request.POST, project_queryset=qs)
+        form = BulkActionForm(request.POST, project_queryset=qs, user=request.user)
         if not form.is_valid():
             messages.error(request, "Không thể xử lý thao tác hàng loạt.")
             return redirect("project_list")
@@ -238,6 +318,14 @@ class BulkActionView(ManagerRequiredMixin, View):
                 deadline_at=form.cleaned_data.get("deadline_at"),
                 priority=form.cleaned_data.get("priority") or None,
                 note=form.cleaned_data.get("note") or "",
+                notify=form.cleaned_data.get("notify"),
+            )
+        elif action == BulkActionForm.ACTION_ASSIGN_MANAGER:
+            count = ProjectService.assign_manager(
+                projects,
+                form.cleaned_data["manager"],
+                request.user,
+                request=request,
                 notify=form.cleaned_data.get("notify"),
             )
         elif action == BulkActionForm.ACTION_MARK_PROFIT:
@@ -280,11 +368,11 @@ class BulkActionView(ManagerRequiredMixin, View):
 
 class AssignProjectsView(ManagerRequiredMixin, View):
     def post(self, request):
-        form = AssignmentForm(request.POST)
+        form = AssignmentForm(request.POST, user=request.user)
         if not form.is_valid():
             messages.error(request, "Không thể phân công dự án.")
             return redirect(request.META.get("HTTP_REFERER", "project_list"))
-        projects = list(Project.objects.active().filter(pk__in=form.cleaned_data["project_ids"]))
+        projects = list(ProjectRepository.visible_to(request.user).filter(pk__in=form.cleaned_data["project_ids"]))
         count = ProjectService.assign(
             projects,
             form.cleaned_data["employee"],
@@ -357,6 +445,7 @@ class ProjectProgressUpdateView(LoginRequiredMixin, View):
             form.cleaned_data["status_note"],
             form.cleaned_data.get("blocker_note") or "",
             request=request,
+            registration_success_link=form.cleaned_data.get("registration_success_link") or "",
         )
         messages.success(request, "Đã cập nhật tiến trình.")
         return redirect(project.get_absolute_url())
@@ -376,7 +465,7 @@ class TaskListView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["statuses"] = Task.Status.choices
         context["priorities"] = Task.Priority.choices
-        context["employees"] = User.objects.filter(role=User.Role.STAFF, is_active=True)
+        context["employees"] = scoped_staff_queryset(self.request.user)
         return context
 
 
@@ -400,6 +489,11 @@ class TaskCreateView(ManagerRequiredMixin, CreateView):
     form_class = TaskForm
     template_name = "workflow/task_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         files = self.request.FILES.getlist("attachments")
         self.object = TaskService.create_task(form, self.request.user, files=files, request=self.request)
@@ -417,6 +511,12 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
     def get_form_class(self):
         return TaskForm if self.request.user.can_manage_projects else StaffTaskUpdateForm
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        if self.request.user.can_manage_projects:
+            kwargs["user"] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         if self.request.user.can_manage_projects:
             files = self.request.FILES.getlist("attachments")
@@ -431,7 +531,7 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
 
 class TaskDeleteView(ManagerRequiredMixin, View):
     def post(self, request, pk):
-        task = get_object_or_404(Task.objects.active(), pk=pk)
+        task = get_object_or_404(TaskRepository.visible_to(request.user), pk=pk)
         task.soft_delete(user=request.user)
         log_activity(
             request.user,
@@ -493,10 +593,19 @@ class ImportDetailView(ManagerRequiredMixin, DetailView):
     model = ImportBatch
     template_name = "workflow/import_detail.html"
 
+    def get_queryset(self):
+        qs = ImportBatch.objects.select_related("uploaded_by")
+        if self.request.user.is_manager_role:
+            qs = qs.filter(uploaded_by=self.request.user)
+        return qs
+
 
 class ImportDuplicateExportView(ManagerRequiredMixin, View):
     def get(self, request, pk):
-        batch = get_object_or_404(ImportBatch, pk=pk)
+        qs = ImportBatch.objects.all()
+        if request.user.is_manager_role:
+            qs = qs.filter(uploaded_by=request.user)
+        batch = get_object_or_404(qs, pk=pk)
         from openpyxl import Workbook
 
         workbook = Workbook()
@@ -536,7 +645,7 @@ class KPIView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["rows"] = ReportService.employee_kpis()
+        context["rows"] = ReportService.employee_kpis(self.request.user)
         return context
 
 
@@ -545,7 +654,7 @@ class ReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        qs = ProjectRepository.search_and_filter(Project.objects.active(), self.request.GET)
+        qs = ProjectRepository.search_and_filter(ProjectRepository.visible_to(self.request.user), self.request.GET)
         counts = ReportService.dashboard_counts(qs)
         completed_base = counts["completed"] + counts["cancelled"]
         counts["completion_rate"] = round(counts["completed"] / completed_base * 100, 2) if completed_base else 0
@@ -574,7 +683,17 @@ class ActivityLogListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = ActivityLog.objects.select_related("user", "project")
-        if not self.request.user.can_manage_projects:
+        if self.request.user.is_manager_role:
+            user = self.request.user
+            visible_project_ids = ProjectRepository.visible_to(user).values_list("pk", flat=True)
+            visible_task_ids = TaskRepository.visible_to(user).values_list("pk", flat=True)
+            qs = qs.filter(
+                Q(user=user)
+                | Q(project_id__in=visible_project_ids)
+                | Q(metadata__manager_id=user.pk)
+                | Q(metadata__task_id__in=visible_task_ids)
+            )
+        elif not self.request.user.can_manage_projects:
             user = self.request.user
             visible_task_ids = TaskRepository.visible_to(user).values_list("pk", flat=True)
             qs = qs.filter(
@@ -603,7 +722,16 @@ class NotificationListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Notification.objects.select_related("actor", "project", "task", "recipient")
-        if not self.request.user.can_manage_projects:
+        if self.request.user.is_manager_role:
+            visible_project_ids = ProjectRepository.visible_to(self.request.user).values_list("pk", flat=True)
+            visible_task_ids = TaskRepository.visible_to(self.request.user).values_list("pk", flat=True)
+            qs = qs.filter(
+                Q(recipient=self.request.user)
+                | Q(actor=self.request.user)
+                | Q(project_id__in=visible_project_ids)
+                | Q(task_id__in=visible_task_ids)
+            )
+        elif not self.request.user.can_manage_projects:
             qs = qs.filter(recipient=self.request.user)
         status = self.request.GET.get("status")
         notification_type = self.request.GET.get("type")
@@ -621,7 +749,19 @@ class NotificationListView(LoginRequiredMixin, ListView):
 
 class NotificationReadView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        qs = Notification.objects.all() if request.user.can_manage_projects else Notification.objects.filter(recipient=request.user)
+        if request.user.is_admin_role:
+            qs = Notification.objects.all()
+        elif request.user.is_manager_role:
+            visible_project_ids = ProjectRepository.visible_to(request.user).values_list("pk", flat=True)
+            visible_task_ids = TaskRepository.visible_to(request.user).values_list("pk", flat=True)
+            qs = Notification.objects.filter(
+                Q(recipient=request.user)
+                | Q(actor=request.user)
+                | Q(project_id__in=visible_project_ids)
+                | Q(task_id__in=visible_task_ids)
+            )
+        else:
+            qs = Notification.objects.filter(recipient=request.user)
         notification = get_object_or_404(qs, pk=pk)
         notification.mark_read()
         return redirect(request.META.get("HTTP_REFERER", "notifications"))
@@ -630,7 +770,16 @@ class NotificationReadView(LoginRequiredMixin, View):
 class NotificationReadAllView(LoginRequiredMixin, View):
     def post(self, request):
         qs = Notification.objects.filter(is_read=False)
-        if not request.user.can_manage_projects:
+        if request.user.is_manager_role:
+            visible_project_ids = ProjectRepository.visible_to(request.user).values_list("pk", flat=True)
+            visible_task_ids = TaskRepository.visible_to(request.user).values_list("pk", flat=True)
+            qs = qs.filter(
+                Q(recipient=request.user)
+                | Q(actor=request.user)
+                | Q(project_id__in=visible_project_ids)
+                | Q(task_id__in=visible_task_ids)
+            )
+        elif not request.user.can_manage_projects:
             qs = qs.filter(recipient=request.user)
         qs.update(is_read=True, read_at=timezone.now())
         messages.success(request, "Đã đánh dấu tất cả thông báo là đã đọc.")
@@ -673,8 +822,15 @@ class TelegramSettingsView(LoginRequiredMixin, TemplateView):
             if telegram_settings.bot_username
             else ""
         )
-        context["linked_users"] = User.objects.exclude(telegram_chat_id="").order_by("username")
-        context["unlinked_staff"] = User.objects.filter(role=User.Role.STAFF, telegram_chat_id="").order_by("username")
+        staff_qs = scoped_staff_queryset(self.request.user)
+        if self.request.user.is_admin_role:
+            linked_qs = User.objects.exclude(telegram_chat_id="")
+        elif self.request.user.is_manager_role:
+            linked_qs = staff_qs.exclude(telegram_chat_id="")
+        else:
+            linked_qs = User.objects.filter(pk=self.request.user.pk).exclude(telegram_chat_id="")
+        context["linked_users"] = linked_qs.order_by("username")
+        context["unlinked_staff"] = staff_qs.filter(telegram_chat_id="").order_by("username")
         return context
 
 
@@ -831,7 +987,7 @@ class ProjectUpdateStatusApiView(LoginRequiredMixin, View):
 class ProjectUpdateResultApiView(LoginRequiredMixin, View):
     def post(self, request, pk):
         require_manager(request.user)
-        project = get_object_or_404(Project.objects.active(), pk=pk)
+        project = get_object_or_404(ProjectRepository.visible_to(request.user), pk=pk)
         result = request.POST.get("result")
         if result not in Project.Result.values:
             return JsonResponse({"error": "Kết quả không hợp lệ"}, status=400)

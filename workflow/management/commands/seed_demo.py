@@ -29,6 +29,7 @@ class Command(BaseCommand):
             username="staff",
             defaults={"role": User.Role.STAFF, "email": "staff@example.com"},
         )
+        staff.manager = manager
         staff.set_password("staff123")
         staff.save()
 
@@ -36,8 +37,11 @@ class Command(BaseCommand):
         for index in range(1, 6):
             project, _ = Project.objects.get_or_create(
                 project_link=f"https://example.com/project-{index}",
-                defaults={"project_name": f"Demo Project {index}", "created_by": manager},
+                defaults={"project_name": f"Demo Project {index}", "created_by": manager, "manager": manager},
             )
+            if not project.manager:
+                project.manager = manager
+                project.save(update_fields=["manager"])
             projects.append(project)
         ProjectService.assign(projects[:3], staff, manager)
         self.stdout.write(self.style.SUCCESS("Demo data created."))
