@@ -42,11 +42,15 @@ git pull --ff-only || true
 
 if [ ! -f .env ]; then
   SECRET_KEY="$(openssl rand -base64 48 | tr -d '\n')"
+  POSTGRES_PASSWORD_VALUE="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-24)"
   cat > .env <<ENV
 DJANGO_SECRET_KEY=${SECRET_KEY}
 DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=${DOMAIN},localhost,127.0.0.1
-DATABASE_URL=postgresql://postgres:postgres@db:5432/workflow
+POSTGRES_DB=workflow
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}
+DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD_VALUE}@db:5432/workflow
 CSRF_TRUSTED_ORIGINS=https://${DOMAIN}
 DJANGO_SECURE_SSL_REDIRECT=false
 DJANGO_SECURE_HSTS_SECONDS=0
@@ -57,6 +61,7 @@ fi
 
 docker compose up -d --build
 docker compose exec -T web python manage.py migrate
+docker compose exec -T web python manage.py collectstatic --noinput
 
 cat > "/etc/nginx/sites-available/${DOMAIN}" <<NGINX
 server {
