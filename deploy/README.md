@@ -29,3 +29,16 @@ Co the doi duong dan:
 ```bash
 sudo APP_DIR=/opt/quanlynhansu bash deploy/update.sh
 ```
+
+## Sua loi PostgreSQL sai mat khau
+
+Neu log co dong `password authentication failed for user "postgres"`, thuong la `.env`
+va mat khau dang luu trong volume PostgreSQL bi lech nhau. Chay lenh nay de dat lai
+mat khau trong database theo gia tri `POSTGRES_PASSWORD` hien tai trong `.env`:
+
+```bash
+cd /opt/quanlynhansu
+sudo bash deploy/repair_postgres_password.sh
+```
+
+Lenh nay khong xoa volume va khong mat du lieu.
