@@ -28,7 +28,7 @@ if [ -z "$POSTGRES_PASSWORD" ]; then
   exit 1
 fi
 
-docker compose up -d db
+bash deploy/ensure_postgres_db.sh
 
 SQL_PASSWORD="${POSTGRES_PASSWORD//\'/\'\'}"
 SQL_USER="${POSTGRES_USER//\"/\"\"}"

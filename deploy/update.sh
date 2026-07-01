@@ -11,6 +11,7 @@ fi
 cd "$APP_DIR"
 git pull --ff-only
 docker compose up -d --build
+bash deploy/ensure_postgres_db.sh
 docker compose exec -T web python manage.py migrate
 docker compose exec -T web python manage.py collectstatic --noinput
 docker compose restart web
