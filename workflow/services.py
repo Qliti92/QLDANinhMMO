@@ -276,7 +276,7 @@ class NotificationService:
                 if candidate:
                     recipient_ids.add(candidate)
         if task:
-            for candidate in (task.assigned_by_id, getattr(task.assignee, "manager_id", None)):
+            for candidate in (task.manager_id, task.assigned_by_id, getattr(task.assignee, "manager_id", None)):
                 if candidate:
                     recipient_ids.add(candidate)
         recipients = User.objects.filter(pk__in=recipient_ids, is_active=True).exclude(pk=getattr(actor, "pk", None))
@@ -287,7 +287,7 @@ class NotificationService:
 class ProgressService:
     @staticmethod
     @transaction.atomic
-    def add_progress(project, user, progress_percent, status_note, blocker_note="", request=None, registration_success_link=""):
+    def add_progress(project, user, progress_percent, status_note, blocker_note="", request=None, registration_success_link="", login_link=""):
         progress = ProjectProgress.objects.create(
             project=project,
             user=user,
@@ -295,9 +295,15 @@ class ProgressService:
             status_note=status_note,
             blocker_note=blocker_note or "",
         )
+        update_fields = []
         if registration_success_link:
             project.registration_success_link = registration_success_link
-            project.save(update_fields=["registration_success_link", "updated_at"])
+            update_fields.append("registration_success_link")
+        if login_link:
+            project.login_link = login_link
+            update_fields.append("login_link")
+        if update_fields:
+            project.save(update_fields=update_fields + ["updated_at"])
         log_activity(
             user,
             ActivityLog.Action.PROGRESS_UPDATED,
@@ -307,6 +313,7 @@ class ProgressService:
                 "progress_percent": progress_percent,
                 "blocker_note": blocker_note or "",
                 "registration_success_link": registration_success_link or "",
+                "login_link": login_link or "",
             },
             request=request,
         )
@@ -480,6 +487,8 @@ class TaskService:
     def create_task(form, assigned_by, files=None, request=None):
         task = form.save(commit=False)
         task.assigned_by = assigned_by
+        if not task.manager_id and assigned_by.is_manager_role:
+            task.manager = assigned_by
         task.save()
         for uploaded in files or []:
             TaskAttachment.objects.create(

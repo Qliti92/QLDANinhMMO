@@ -106,6 +106,7 @@ class Project(models.Model):
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.NORMAL)
     deadline_at = models.DateTimeField(null=True, blank=True)
     registration_success_link = models.URLField(blank=True, max_length=1000)
+    login_link = models.URLField(blank=True, max_length=1000)
     note = models.TextField(blank=True)
     current_employee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -359,6 +360,13 @@ class Task(models.Model):
         on_delete=models.PROTECT,
         related_name="assigned_tasks",
     )
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_tasks",
+    )
     assigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -378,6 +386,7 @@ class Task(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["assignee"], name="wf_tk_assignee_idx"),
+            models.Index(fields=["manager"], name="wf_tk_manager_idx"),
             models.Index(fields=["assigned_by"], name="wf_tk_assigned_by_idx"),
             models.Index(fields=["status"], name="wf_tk_status_idx"),
             models.Index(fields=["priority"], name="wf_tk_priority_idx"),

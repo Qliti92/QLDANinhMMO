@@ -383,6 +383,12 @@ class ProgressUpdateForm(forms.ModelForm):
         widget=forms.URLInput(attrs={"placeholder": "https://example.com/..."}),
     )
 
+    login_link = forms.CharField(
+        label="Link đăng nhập",
+        required=False,
+        widget=forms.URLInput(attrs={"placeholder": "https://example.com/login"}),
+    )
+
     class Meta:
         model = ProjectProgress
         fields = ["blocker_note"]
@@ -404,6 +410,7 @@ class ProgressUpdateForm(forms.ModelForm):
             cleaned["progress_percent"] = self.STAGE_PROGRESS[stage]
             cleaned["status_note"] = dict(self.STAGE_CHOICES)[stage]
         link = (cleaned.get("registration_success_link") or "").strip()
+        login_link = (cleaned.get("login_link") or "").strip()
         if stage == "REGISTERED_SUCCESS":
             if not link:
                 self.add_error("registration_success_link", "Vui lòng nhập link khi cập nhật ĐK Thành Công.")
@@ -416,8 +423,20 @@ class ProgressUpdateForm(forms.ModelForm):
                     self.add_error("registration_success_link", "Link không hợp lệ.")
                 else:
                     cleaned["registration_success_link"] = link
+            if not login_link:
+                self.add_error("login_link", "Vui lòng nhập link đăng nhập khi cập nhật ĐK Thành Công.")
+            else:
+                if "://" not in login_link:
+                    login_link = f"https://{login_link}"
+                try:
+                    URLValidator()(login_link)
+                except DjangoValidationError:
+                    self.add_error("login_link", "Link đăng nhập không hợp lệ.")
+                else:
+                    cleaned["login_link"] = login_link
         else:
             cleaned["registration_success_link"] = ""
+            cleaned["login_link"] = ""
         return cleaned
 
     def clean_progress_percent(self):
@@ -439,10 +458,11 @@ class TaskForm(forms.ModelForm):
 
     class Meta:
         model = Task
-        fields = ["title", "description", "assignee", "priority", "deadline_at", "status"]
+        fields = ["title", "description", "manager", "assignee", "priority", "deadline_at", "status"]
         labels = {
             "title": "Tiêu đề nhiệm vụ",
             "description": "Mô tả",
+            "manager": "Quản lý phụ trách",
             "assignee": "Nhân viên nhận",
             "priority": "Độ ưu tiên",
             "deadline_at": "Deadline",
@@ -456,7 +476,10 @@ class TaskForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
+        self.fields["manager"].queryset = manager_queryset()
         self.fields["assignee"].queryset = staff_queryset_for(user)
+        if user and user.is_manager_role:
+            self.fields.pop("manager")
         apply_bootstrap(self)
 
 

@@ -140,6 +140,7 @@ class WorkflowServiceTests(TestCase):
             data={
                 "progress_stage": "REGISTERED_SUCCESS",
                 "registration_success_link": "success.example.com/path",
+                "login_link": "login.example.com/path",
                 "blocker_note": "",
             }
         )
@@ -147,12 +148,14 @@ class WorkflowServiceTests(TestCase):
         self.assertEqual(form.cleaned_data["progress_percent"], 50)
         self.assertEqual(form.cleaned_data["status_note"], "ĐK Thành Công")
         self.assertEqual(form.cleaned_data["registration_success_link"], "https://success.example.com/path")
+        self.assertEqual(form.cleaned_data["login_link"], "https://login.example.com/path")
 
     def test_project_progress_form_requires_link_for_registered_success(self):
         form = ProgressUpdateForm(data={"progress_stage": "REGISTERED_SUCCESS", "blocker_note": ""})
 
         self.assertFalse(form.is_valid())
         self.assertIn("registration_success_link", form.errors)
+        self.assertIn("login_link", form.errors)
 
     def test_staff_progress_creates_update_and_manager_notification(self):
         project = Project.objects.create(
@@ -184,10 +187,12 @@ class WorkflowServiceTests(TestCase):
             50,
             "ĐK Thành Công",
             registration_success_link="https://success.example.com/account",
+            login_link="https://success.example.com/login",
         )
         project.refresh_from_db()
 
         self.assertEqual(project.registration_success_link, "https://success.example.com/account")
+        self.assertEqual(project.login_link, "https://success.example.com/login")
 
     def test_staff_status_update_notifies_manager(self):
         project = Project.objects.create(
@@ -756,6 +761,7 @@ class WorkflowViewTests(TestCase):
         self.project.refresh_from_db()
         self.assertEqual(missing_response.status_code, 302)
         self.assertEqual(self.project.registration_success_link, "")
+        self.assertEqual(self.project.login_link, "")
         self.assertFalse(ProjectProgress.objects.filter(project=self.project, status_note="ĐK Thành Công").exists())
 
         response = self.client.post(
@@ -763,6 +769,7 @@ class WorkflowViewTests(TestCase):
             {
                 "progress_stage": "REGISTERED_SUCCESS",
                 "registration_success_link": "success.example.com/dk",
+                "login_link": "success.example.com/login",
                 "blocker_note": "",
             },
         )
@@ -770,17 +777,20 @@ class WorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.project.registration_success_link, "https://success.example.com/dk")
+        self.assertEqual(self.project.login_link, "https://success.example.com/login")
         self.assertTrue(ProjectProgress.objects.filter(project=self.project, progress_percent=50, status_note="ĐK Thành Công").exists())
 
     def test_project_list_shows_registered_success_link_label(self):
         self.project.registration_success_link = "https://success.example.com/dk"
-        self.project.save(update_fields=["registration_success_link"])
+        self.project.login_link = "https://success.example.com/login"
+        self.project.save(update_fields=["registration_success_link", "login_link"])
         self.client.login(username="manager2", password="pass")
 
         response = self.client.get(reverse("project_list"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'href="https://success.example.com/dk"')
+        self.assertContains(response, 'href="https://success.example.com/login"')
         self.assertContains(response, "bi-link-45deg")
 
     def test_staff_can_update_assigned_project_state_and_result(self):

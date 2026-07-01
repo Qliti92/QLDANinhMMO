@@ -118,11 +118,18 @@
           <td class="project-name-cell">
             <a href="{{ project.get_absolute_url }}" title="{{ project.project_name }}">{{ project.project_name|truncatechars:28 }}</a>
           </td>
-          <td>
+          <td class="project-link-cell">
             {% if project.registration_success_link %}
-              <a class="btn btn-sm btn-success py-0 px-2" href="{{ project.registration_success_link }}" target="_blank" rel="noopener">
-                <i class="bi bi-link-45deg"></i> link
-              </a>
+              <div class="d-grid gap-1">
+                <a class="btn btn-sm btn-success py-0 px-2" href="{{ project.registration_success_link }}" target="_blank" rel="noopener">
+                  <i class="bi bi-link-45deg"></i> link
+                </a>
+                {% if project.login_link %}
+                  <a class="btn btn-sm btn-outline-success py-0 px-2" href="{{ project.login_link }}" target="_blank" rel="noopener">
+                    <i class="bi bi-box-arrow-in-right"></i> login
+                  </a>
+                {% endif %}
+              </div>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}

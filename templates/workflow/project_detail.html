@@ -10,6 +10,9 @@
       {% if project.registration_success_link %}
         · <a href="{{ project.registration_success_link }}" target="_blank" rel="noopener">link</a>
       {% endif %}
+      {% if project.login_link %}
+        · <a href="{{ project.login_link }}" target="_blank" rel="noopener">login</a>
+      {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
@@ -116,12 +119,16 @@
 (() => {
   const stage = document.querySelector('#progressModal [name="progress_stage"]');
   const link = document.querySelector('#progressModal [name="registration_success_link"]');
-  if (!stage || !link) return;
+  const loginLink = document.querySelector('#progressModal [name="login_link"]');
+  if (!stage || !link || !loginLink) return;
   const row = link.closest('.mb-3');
+  const loginRow = loginLink.closest('.mb-3');
   const sync = () => {
     const active = stage.value === 'REGISTERED_SUCCESS';
     row.style.display = active ? '' : 'none';
+    loginRow.style.display = active ? '' : 'none';
     link.required = active;
+    loginLink.required = active;
   };
   stage.addEventListener('change', sync);
   sync();

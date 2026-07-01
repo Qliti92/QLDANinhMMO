@@ -19,6 +19,7 @@
 </div>
 
 <div class="detail-grid mb-4">
+  <div><strong>Quản lý</strong><span>{{ task.manager|default:"-" }}</span></div>
   <div><strong>Trạng thái</strong><span class="badge {{ task.status|status_badge }}">{{ task.status|status_label }}</span></div>
   <div><strong>Ưu tiên</strong><span class="{{ task.priority|priority_badge }}">{{ task.priority|priority_label }}</span></div>
   <div><strong>Deadline</strong><span class="{{ task|deadline_badge }}">{{ task|deadline_label }}</span><span>{{ task.deadline_at|date:"d/m/Y H:i"|default:"-" }}</span></div>

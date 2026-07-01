@@ -446,6 +446,7 @@ class ProjectProgressUpdateView(LoginRequiredMixin, View):
             form.cleaned_data.get("blocker_note") or "",
             request=request,
             registration_success_link=form.cleaned_data.get("registration_success_link") or "",
+            login_link=form.cleaned_data.get("login_link") or "",
         )
         messages.success(request, "Đã cập nhật tiến trình.")
         return redirect(project.get_absolute_url())

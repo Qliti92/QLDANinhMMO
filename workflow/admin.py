@@ -73,8 +73,8 @@ class TaskAttachmentInline(admin.TabularInline):
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ("title", "assignee", "assigned_by", "status", "priority", "deadline_at", "created_at")
-    list_filter = ("status", "priority", "assignee", "assigned_by")
+    list_display = ("title", "manager", "assignee", "assigned_by", "status", "priority", "deadline_at", "created_at")
+    list_filter = ("manager", "status", "priority", "assignee", "assigned_by")
     search_fields = ("title", "description", "assignee__username")
     readonly_fields = ("created_at", "updated_at", "completed_at")
     inlines = [TaskAttachmentInline]
