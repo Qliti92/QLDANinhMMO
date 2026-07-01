@@ -478,9 +478,20 @@ class TaskForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["manager"].queryset = manager_queryset()
         self.fields["assignee"].queryset = staff_queryset_for(user)
+        self.fields["assignee"].required = False
         if user and user.is_manager_role:
             self.fields.pop("manager")
         apply_bootstrap(self)
+
+    def clean(self):
+        cleaned = super().clean()
+        manager = cleaned.get("manager")
+        assignee = cleaned.get("assignee")
+        if "manager" not in self.fields:
+            manager = True
+        if not manager and not assignee:
+            raise forms.ValidationError("Vui lòng chọn quản lý hoặc nhân viên nhận nhiệm vụ.")
+        return cleaned
 
 
 class StaffTaskUpdateForm(forms.ModelForm):

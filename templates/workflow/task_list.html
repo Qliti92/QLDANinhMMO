@@ -63,7 +63,7 @@
           <div class="small text-muted">{{ task.description|truncatechars:80 }}</div>
         </td>
         <td class="task-user-cell">{{ task.manager|default:"-" }}</td>
-        <td class="task-user-cell">{{ task.assignee }}</td>
+        <td class="task-user-cell">{{ task.assignee|default:"-" }}</td>
         <td><span class="badge {{ task.status|status_badge }}">{{ task.status|status_label }}</span></td>
         <td><span class="{{ task.priority|priority_badge }}">{{ task.priority|priority_label }}</span></td>
         <td class="task-deadline-cell"><span class="{{ task|deadline_badge }}">{{ task|deadline_label }}</span><div class="small text-muted">{{ task.deadline_at|date:"d/m H:i"|default:"-" }}</div></td>

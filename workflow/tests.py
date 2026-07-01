@@ -122,6 +122,46 @@ class WorkflowServiceTests(TestCase):
         self.assertEqual(send_message.call_args.args[0], "12345")
         self.assertIn(task.title, send_message.call_args.args[1])
 
+    def test_task_can_be_assigned_to_manager_without_staff(self):
+        form = TaskForm(
+            data={
+                "title": "Manager Only Task",
+                "description": "Manager will assign staff later",
+                "manager": self.manager.pk,
+                "priority": Task.Priority.NORMAL,
+                "status": Task.Status.NEW,
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+        task = TaskService.create_task(form, self.manager)
+
+        self.assertEqual(task.manager, self.manager)
+        self.assertIsNone(task.assignee)
+        self.assertTrue(TaskRepository.visible_to(self.manager).filter(pk=task.pk).exists())
+
+    def test_admin_can_assign_task_to_manager_and_staff(self):
+        admin = User.objects.create_user("admin-task", password="pass", role=User.Role.ADMIN, is_superuser=True)
+        form = TaskForm(
+            data={
+                "title": "Manager And Staff Task",
+                "description": "Both can see it",
+                "manager": self.manager.pk,
+                "assignee": self.staff.pk,
+                "priority": Task.Priority.HIGH,
+                "status": Task.Status.NEW,
+            },
+            user=admin,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+        task = TaskService.create_task(form, admin)
+
+        self.assertEqual(task.manager, self.manager)
+        self.assertEqual(task.assignee, self.staff)
+        self.assertTrue(TaskRepository.visible_to(self.manager).filter(pk=task.pk).exists())
+        self.assertTrue(TaskRepository.visible_to(self.staff).filter(pk=task.pk).exists())
+
     def test_project_progress_form_maps_stage_to_percent_and_note(self):
         expected = {
             "PENDING_REVIEW": (25, "Chờ Duyệt"),

@@ -498,6 +498,29 @@ class TaskService:
                 uploaded_by=assigned_by,
             )
         assigned_by_name = display_user(assigned_by)
+        if task.manager_id and task.manager_id != getattr(assigned_by, "pk", None):
+            NotificationService.create(
+                recipient=task.manager,
+                actor=assigned_by,
+                task=task,
+                notification_type=Notification.Type.SYSTEM,
+                title=f"{assigned_by_name} giao nhiệm vụ cho bạn quản lý",
+                message=(
+                    f"{assigned_by_name} đã giao nhiệm vụ \"{task.title}\" cho bạn quản lý. "
+                    f"Hạn hoàn thành: {display_datetime(task.deadline_at)}. "
+                    f"Độ ưu tiên: {task.get_priority_display()}. "
+                    f"File đính kèm: {len(files or [])}."
+                ),
+            )
+        if not task.assignee_id:
+            log_activity(
+                assigned_by,
+                ActivityLog.Action.TASK_CREATED,
+                f"Đã giao nhiệm vụ {task.title} cho quản lý {display_user(task.manager)}",
+                metadata={"task_id": task.pk, "manager_id": task.manager_id},
+                request=request,
+            )
+            return task
         NotificationService.create(
             recipient=task.assignee,
             actor=assigned_by,
@@ -540,7 +563,7 @@ class TaskService:
             metadata={"task_id": task.pk},
             request=request,
         )
-        if previous_assignee_id != task.assignee_id:
+        if previous_assignee_id != task.assignee_id and task.assignee_id:
             NotificationService.create(
                 recipient=task.assignee,
                 actor=user,
@@ -549,7 +572,7 @@ class TaskService:
                 title="",
                 message="",
             )
-        elif task.assignee_id != getattr(user, "pk", None):
+        elif task.assignee_id and task.assignee_id != getattr(user, "pk", None):
             NotificationService.create(
                 recipient=task.assignee,
                 actor=user,
@@ -594,7 +617,7 @@ class TaskService:
                 ),
                 notification_type=Notification.Type.TASK_PROGRESS_UPDATED,
             )
-        elif task.assignee_id != user.pk:
+        elif task.assignee_id and task.assignee_id != user.pk:
             NotificationService.create(
                 recipient=task.assignee,
                 actor=user,
