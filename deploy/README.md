@@ -42,3 +42,20 @@ sudo bash deploy/repair_postgres_password.sh
 ```
 
 Lenh nay khong xoa volume va khong mat du lieu.
+
+## Sua loi login bi 500
+
+Neu trang `/login/` mo duoc nhung bam dang nhap la loi `500 Internal Server Error`,
+thuong la database tren server chua chay het migration. Chay:
+
+```bash
+cd /opt/quanlynhansu
+sudo bash deploy/repair_login_500.sh
+```
+
+Script se migrate database, restart web, va test POST `/login/`. Neu van loi, xem log:
+
+```bash
+cd /opt/quanlynhansu
+sudo docker compose logs --tail=200 web
+```
